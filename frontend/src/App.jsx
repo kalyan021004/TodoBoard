@@ -4,7 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
 import Register from './components/Register';
-import Dashboard from './components/Dashboard'; // You'll create this next
+import Dashboard from './pages/Dashboard'; // You'll create this next
 
 function App() {
   return (
