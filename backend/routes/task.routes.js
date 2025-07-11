@@ -229,6 +229,28 @@ router.get('/user/:userId', authenticate, async (req, res) => {
     });
   }
 });
+// routes/tasks.js - Add this new endpoint
+router.put('/:id/position', async (req, res) => {
+    try {
+        const { newStatus, newPosition } = req.body;
+        
+        const task = await Task.findById(req.params.id);
+        if (!task) return res.status(404).json({ message: 'Task not found' });
+        
+        // Update task status and position
+        task.status = newStatus;
+        task.position = newPosition;
+        
+        await task.save();
+        
+        // Populate user data for frontend
+        await task.populate('assignedUser', 'username email');
+        
+        res.json(task);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
 
 export default router;
 

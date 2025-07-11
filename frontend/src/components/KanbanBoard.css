@@ -1,0 +1,87 @@
+/* components/KanbanBoard.css */
+.kanban-board {
+    padding: 20px;
+    min-height: 100vh;
+    background-color: #2789ec;
+}
+
+.kanban-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 0 10px;
+}
+
+.kanban-header h1 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 2rem;
+}
+
+.kanban-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 0 10px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
+
+.btn-ghost {
+    background-color: transparent;
+    color: #7f8c8d;
+    border: 2px dashed #bdc3c7;
+}
+
+.btn-ghost:hover {
+    color: #3498db;
+    border-color: #3498db;
+}
+
+.loading {
+    text-align: center;
+    padding: 50px;
+    font-size: 18px;
+    color: #7f8c8d;
+}
+
+.error {
+    background-color: #e74c3c;
+    color: white;
+    padding: 15px;
+    border-radius: 6px;
+    margin: 20px;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .kanban-columns {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .kanban-header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+}

@@ -11,7 +11,6 @@ export const authenticate = async (req, res, next) => {
                 message: 'No Token Provided'
             });
         }
-        console.log('Token:', token);
 
 
         const decoded = verifyToken(token);

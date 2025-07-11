@@ -1,0 +1,114 @@
+/* components/KanbanColumn.css */
+
+.kanban-column {
+  background: linear-gradient(to bottom, #f7f9fb, #eef2f5);
+  border-radius: 16px;
+  padding: 20px;
+  min-height: 500px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(4px);
+}
+
+.kanban-column.drag-over {
+  background-color: #d0e6f7;
+  transform: scale(1.02);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+}
+
+.column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #dfe6ec;
+}
+
+.column-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.column-title h3 {
+  margin: 0;
+  color: #2d3436;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.task-count {
+  background-color: #636e72;
+  color: white;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.column-stats {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.priority-indicator {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  text-align: center;
+}
+
+.priority-indicator.high {
+  background-color: #ff4d4f;
+}
+
+.priority-indicator.medium {
+  background-color: #ffa502;
+}
+
+.priority-indicator.low {
+  background-color: #2ecc71;
+}
+
+.add-task-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background-color: #1e90ff;
+  color: white;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.add-task-btn:hover {
+  background-color: #007bff;
+  transform: scale(1.1);
+}
+
+.column-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.empty-column {
+  text-align: center;
+  padding: 50px 20px;
+  color: #95a5a6;
+  font-style: italic;
+  font-size: 15px;
+}
+
+.empty-column p {
+  margin-bottom: 12px;
+}
