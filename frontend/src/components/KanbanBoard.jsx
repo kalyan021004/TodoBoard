@@ -49,6 +49,20 @@ const KanbanBoard = () => {
         { id: 'done', title: 'Done', status: 'done' }
     ];
 
+    // Logout function
+    const handleLogout = () => {
+        // Clear any stored authentication data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        
+        // Redirect to login page
+        window.location.href = '/login';
+        // Alternative: if using React Router
+        // navigate('/login');
+    };
+
     const getTasksByStatus = (status) => {
         if (!tasks || !Array.isArray(tasks)) {
             return [];
@@ -283,6 +297,9 @@ const KanbanBoard = () => {
                 <div className="header-actions">
                     <button className="btn btn-primary" onClick={() => handleCreateTask()}>
                         + Add New Task
+                    </button>
+                    <button className="btn btn-secondary logout-btn" onClick={handleLogout}>
+                        Logout
                     </button>
                 </div>
             </div>
