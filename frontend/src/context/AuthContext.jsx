@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token'));
 
   // API base URL
-  const API_URL = 'http://localhost:5000/api';
+const API_URL=import.meta.env.VITE_API_URL;
 
   // Check if user is authenticated on app load
   useEffect(() => {
@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }) => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       try {
-        const response = await fetch(`${API_URL}/auth/profile`, {
+        const response = await fetch(`${API_URL}/api/auth/profile`, {
           headers: {
             'Authorization': `Bearer ${storedToken}`
           }
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +78,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (username, email, password) => {
     try {
-      const response = await fetch(`${API_URL}/auth/register`, {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
