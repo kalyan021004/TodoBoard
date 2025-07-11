@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'path';
 
 import dotenv from 'dotenv';
+
 import authRoutes from './routes/auth.routes.js'
 import taskRoutes from './routes/task.routes.js'
 import userRoutes from './routes/user.routes.js'
