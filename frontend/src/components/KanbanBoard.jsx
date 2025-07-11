@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import KanbanColumn from './KanbanColumn';
 import TaskModal from './TaskModal';
 import FilterBar from './FilterBar';
@@ -6,6 +7,7 @@ import { useTasks } from '../hooks/useTasks';
 import './KanbanBoard.css';
 
 const KanbanBoard = () => {
+    const navigate = useNavigate();
     const {
         tasks,
         loading,
@@ -57,10 +59,11 @@ const KanbanBoard = () => {
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
         
-        // Redirect to login page
-        window.location.href = '/login';
-        // Alternative: if using React Router
-        // navigate('/login');
+        // Navigate to login page using React Router
+        navigate('/login', { replace: true });
+        
+        // Alternative: redirect to home page if no login route
+        // navigate('/', { replace: true });
     };
 
     const getTasksByStatus = (status) => {
