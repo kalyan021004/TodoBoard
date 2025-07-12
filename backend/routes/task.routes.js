@@ -3,8 +3,9 @@ import Task from '../models/task.models.js';
 import User from '../models/user.models.js';
 import { authenticate } from '../middleware/auth.js';
 import { validateTask } from '../middleware/taskValidation.js';
-const router = express.Router();
+import { getIO } from '../sockets/socket.js'; // Import the socket instance
 
+const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
     try {
@@ -16,12 +17,10 @@ router.get('/', authenticate, async (req, res) => {
         const sort = {};
         sort[sortBy] = order === 'desc' ? -1 : 1;
 
-
         const tasks = await Task.find(filter)
             .populate('assignedUser', 'username email')
             .populate('createdBy', 'username email')
             .sort(sort);
-
 
         res.json({
             success: true,
@@ -36,6 +35,7 @@ router.get('/', authenticate, async (req, res) => {
         });
     }
 });
+
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
@@ -61,6 +61,7 @@ router.get('/:id', authenticate, async (req, res) => {
     });
   }
 });
+
 router.post('/', authenticate, validateTask, async (req, res) => {
   try {
     const { title, description, assignedUser, status, priority } = req.body;
@@ -101,6 +102,26 @@ router.post('/', authenticate, validateTask, async (req, res) => {
     await task.populate('assignedUser', 'username email');
     await task.populate('createdBy', 'username email');
     
+    // 🎉 EMIT SOCKET EVENT FOR TASK CREATION
+    const io = getIO();
+    if (io) {
+      io.emit('task_created', {
+        task: task,
+        createdBy: req.user.username,
+        timestamp: new Date()
+      });
+      
+      // Special notification for assigned user
+      if (assignedUser !== req.user.id) {
+        io.emit('task_assigned_to_you', {
+          task: task,
+          assignedBy: req.user.username,
+          assignedUserId: assignedUser,
+          timestamp: new Date()
+        });
+      }
+    }
+    
     res.status(201).json({
       success: true,
       data: task,
@@ -115,15 +136,13 @@ router.post('/', authenticate, validateTask, async (req, res) => {
   }
 });
 
-
-
-router.put('/:id',authenticate, validateTask, async (req, res) => {
+router.put('/:id', authenticate, validateTask, async (req, res) => {
   try {
     const { title, description, assignedUser, status, priority } = req.body;
     
-    // Find the task
-    const task = await Task.findById(req.params.id);
-    if (!task) {
+    // Find the task with old data
+    const oldTask = await Task.findById(req.params.id);
+    if (!oldTask) {
       return res.status(404).json({
         success: false,
         message: 'Task not found'
@@ -153,22 +172,68 @@ router.put('/:id',authenticate, validateTask, async (req, res) => {
       });
     }
     
-    // Update task
-    task.title = title.trim();
-    task.description = description?.trim();
-    task.assignedUser = assignedUser;
-    task.status = status || task.status;
-    task.priority = priority || task.priority;
+    // Store old values for comparison
+    const oldStatus = oldTask.status;
+    const oldAssignedUser = oldTask.assignedUser?.toString();
     
-    await task.save();
+    // Update task
+    oldTask.title = title.trim();
+    oldTask.description = description?.trim();
+    oldTask.assignedUser = assignedUser;
+    oldTask.status = status || oldTask.status;
+    oldTask.priority = priority || oldTask.priority;
+    
+    await oldTask.save();
     
     // Populate the updated task
-    await task.populate('assignedUser', 'username email');
-    await task.populate('createdBy', 'username email');
+    await oldTask.populate('assignedUser', 'username email');
+    await oldTask.populate('createdBy', 'username email');
+    
+    // 🎉 EMIT SOCKET EVENTS FOR TASK UPDATE
+    const io = getIO();
+    if (io) {
+      // Check if status changed (task moved)
+      if (oldStatus !== status) {
+        io.emit('task_moved', {
+          task: oldTask,
+          movedBy: req.user.username,
+          oldStatus: oldStatus,
+          newStatus: status,
+          timestamp: new Date()
+        });
+      }
+      
+      // Check if assigned user changed
+      if (oldAssignedUser !== assignedUser) {
+        io.emit('task_assigned', {
+          task: oldTask,
+          assignedBy: req.user.username,
+          assignedTo: assignedUser,
+          timestamp: new Date()
+        });
+        
+        // Special notification for newly assigned user
+        if (assignedUser !== req.user.id) {
+          io.emit('task_assigned_to_you', {
+            task: oldTask,
+            assignedBy: req.user.username,
+            assignedUserId: assignedUser,
+            timestamp: new Date()
+          });
+        }
+      }
+      
+      // General task updated event
+      io.emit('task_updated', {
+        task: oldTask,
+        updatedBy: req.user.username,
+        timestamp: new Date()
+      });
+    }
     
     res.json({
       success: true,
-      data: task,
+      data: oldTask,
       message: 'Task updated successfully'
     });
   } catch (error) {
@@ -180,10 +245,11 @@ router.put('/:id',authenticate, validateTask, async (req, res) => {
   }
 });
 
-
-router.delete('/:id',authenticate, async (req, res) => {
+router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findById(req.params.id)
+      .populate('assignedUser', 'username email')
+      .populate('createdBy', 'username email');
     
     if (!task) {
       return res.status(404).json({
@@ -192,9 +258,17 @@ router.delete('/:id',authenticate, async (req, res) => {
       });
     }
     
-    
-    
     await Task.findByIdAndDelete(req.params.id);
+    
+    // 🎉 EMIT SOCKET EVENT FOR TASK DELETION
+    const io = getIO();
+    if (io) {
+      io.emit('task_deleted', {
+        task: task,
+        deletedBy: req.user.username,
+        timestamp: new Date()
+      });
+    }
     
     res.json({
       success: true,
@@ -229,13 +303,17 @@ router.get('/user/:userId', authenticate, async (req, res) => {
     });
   }
 });
-// routes/tasks.js - Add this new endpoint
-router.put('/:id/position', async (req, res) => {
+
+// 🎉 UPDATED POSITION ENDPOINT WITH SOCKET EVENTS
+router.put('/:id/position', authenticate, async (req, res) => {
     try {
         const { newStatus, newPosition } = req.body;
         
         const task = await Task.findById(req.params.id);
         if (!task) return res.status(404).json({ message: 'Task not found' });
+        
+        // Store old status for comparison
+        const oldStatus = task.status;
         
         // Update task status and position
         task.status = newStatus;
@@ -245,6 +323,22 @@ router.put('/:id/position', async (req, res) => {
         
         // Populate user data for frontend
         await task.populate('assignedUser', 'username email');
+        await task.populate('createdBy', 'username email');
+        
+        // 🎉 EMIT SOCKET EVENT FOR TASK POSITION/STATUS CHANGE
+        const io = getIO();
+        if (io) {
+          // Only emit if status actually changed
+          if (oldStatus !== newStatus) {
+            io.emit('task_moved', {
+              task: task,
+              movedBy: req.user.username,
+              oldStatus: oldStatus,
+              newStatus: newStatus,
+              timestamp: new Date()
+            });
+          }
+        }
         
         res.json(task);
     } catch (error) {
@@ -253,4 +347,3 @@ router.put('/:id/position', async (req, res) => {
 });
 
 export default router;
-

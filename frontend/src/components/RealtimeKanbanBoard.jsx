@@ -1,21 +1,17 @@
-import React, { useState, useEffect,useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import KanbanColumn from './KanbanColumn';
 import TaskModal from './TaskModal';
 import FilterBar from './FilterBar';
-import NotificationContainer from './NotificationContainer';
-import OnlineUsers from './OnlineUsers';
 import { useTasks } from '../hooks/useTasks';
 import { useSocketTasks } from '../hooks/useSocketTasks';
 import { useSocketUsers } from '../hooks/useSocketUsers';
-import { useSocket } from '../context/SocketContext';
-import SocketDebugPanel from './SocketDebugPanel';
-
 import './KanbanBoard.css';
 
-const KanbanBoard = () => {
+const RealtimeKanbanBoard = () => {
     const navigate = useNavigate();
-    const { socket } = useSocket();
+    
+    // Core task management hook
     const {
         tasks: initialTasks,
         loading,
@@ -29,25 +25,27 @@ const KanbanBoard = () => {
         users
     } = useTasks();
 
-    // Socket integration
-   const { 
-    tasks: socketTasks, 
-    setTasks, 
-    notifications, 
-    removeNotification, 
-    clearNotifications,
-    testNotification // Add this
-} = useSocketTasks(initialTasks);
+    // Real-time task updates via WebSocket
+    const {
+        tasks: realtimeTasks,
+        setTasks: setRealtimeTasks,
+        notifications,
+        removeNotification,
+        clearNotifications
+    } = useSocketTasks(initialTasks);
 
+    // Real-time user presence and typing indicators
+    const {
+        onlineUsers,
+        typingUsers
+    } = useSocketUsers();
 
-    const { onlineUsers, typingUsers } = useSocketUsers();
-
+    // Local state
     const [showModal, setShowModal] = useState(false);
     const [editingTask, setEditingTask] = useState(null);
     const [draggedTask, setDraggedTask] = useState(null);
     const [draggedOverUser, setDraggedOverUser] = useState(null);
     const [isTyping, setIsTyping] = useState(false);
-    const [tasksInitialized, setTasksInitialized] = useState(false);
 
     const [filters, setFilters] = useState({
         priority: 'all',
@@ -58,16 +56,20 @@ const KanbanBoard = () => {
     const [sortBy, setSortBy] = useState('createdAt');
     const [sortOrder, setSortOrder] = useState('desc');
 
-    // Better task selection logic
-    const activeTasks = useMemo(() => {
-        // If we have socket tasks and they're properly initialized, use them
-        if (socketTasks.length > 0 && tasksInitialized) {
-            return socketTasks;
-        }
-        // Otherwise use initial tasks
-        return initialTasks;
-    }, [socketTasks, initialTasks, tasksInitialized]);
+    const columns = [
+        { id: 'todo', title: 'To Do', status: 'todo' },
+        { id: 'in-progress', title: 'In Progress', status: 'in-progress' },
+        { id: 'done', title: 'Done', status: 'done' }
+    ];
 
+    // Sync initial tasks with real-time tasks when initial data loads
+    useEffect(() => {
+        if (initialTasks.length > 0 && realtimeTasks.length === 0) {
+            setRealtimeTasks(initialTasks);
+        }
+    }, [initialTasks, realtimeTasks.length, setRealtimeTasks]);
+
+    // Load initial data
     useEffect(() => {
         fetchTasks();
     }, [fetchTasks]);
@@ -78,58 +80,22 @@ const KanbanBoard = () => {
         }
     }, [showModal, users.length, fetchUsers]);
 
-    // Better initialization logic
-    useEffect(() => {
-        if (initialTasks.length > 0) {
-            // Always update socket tasks when initial tasks change
-            setTasks(initialTasks);
-            setTasksInitialized(true);
-        }
-    }, [initialTasks, setTasks]);
-
-    // Ensure socket tasks are set when they become available
-    useEffect(() => {
-        if (socketTasks.length > 0 && !tasksInitialized) {
-            setTasksInitialized(true);
-        }
-    }, [socketTasks.length, tasksInitialized]);
-
-    // Handle typing indicator
-    const handleTyping = (isTypingNow) => {
-        if (socket && isTypingNow !== isTyping) {
-            setIsTyping(isTypingNow);
-            socket.emit('user_typing', { 
-                isTyping: isTypingNow,
-                location: 'kanban_board'
-            });
-        }
-    };
-
-    const columns = [
-        { id: 'todo', title: 'To Do', status: 'todo' },
-        { id: 'in-progress', title: 'In Progress', status: 'in-progress' },
-        { id: 'done', title: 'Done', status: 'done' }
-    ];
-
     // Logout function
     const handleLogout = () => {
-        // Clear any stored authentication data
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
-        
-        // Navigate to login page using React Router
         navigate('/login', { replace: true });
     };
-    
 
+    // Use real-time tasks instead of initial tasks for display
     const getTasksByStatus = (status) => {
-        if (!activeTasks || !Array.isArray(activeTasks)) {
+        if (!realtimeTasks || !Array.isArray(realtimeTasks)) {
             return [];
         }
 
-        let filteredTasks = activeTasks.filter(task => task.status === status);
+        let filteredTasks = realtimeTasks.filter(task => task.status === status);
 
         if (filters.priority !== 'all') {
             filteredTasks = filteredTasks.filter(task => task.priority === filters.priority);
@@ -189,24 +155,21 @@ const KanbanBoard = () => {
     const handleEditTask = (task) => {
         setEditingTask(task);
         setShowModal(true);
-        handleTyping(true);
     };
 
     const handleCloseModal = () => {
         setShowModal(false);
         setEditingTask(null);
-        handleTyping(false);
+        setIsTyping(false);
     };
 
     const handleSaveTask = async (taskData) => {
         try {
             if (editingTask._id) {
-                await updateTask(editingTask._id, taskData);
-                // Socket will handle the update via useSocketTasks
+                await handleUpdateTask(editingTask._id, taskData);
             } else {
                 const status = editingTask.status || 'todo';
-                await createTask({ ...taskData, status });
-                // Socket will handle the creation via useSocketTasks
+                await handleCreateTaskSubmit({ ...taskData, status });
             }
             handleCloseModal();
         } catch (error) {
@@ -214,24 +177,49 @@ const KanbanBoard = () => {
         }
     };
 
+    const handleCreateTaskSubmit = async (taskData) => {
+        try {
+            await createTask(taskData);
+        } catch (error) {
+            console.error('Error creating task:', error);
+        }
+    };
+
+    const handleUpdateTask = async (taskId, updates) => {
+        try {
+            await updateTask(taskId, updates);
+        } catch (error) {
+            console.error('Error updating task:', error);
+        }
+    };
+
     const handleDeleteTask = async (taskId) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             try {
                 await deleteTask(taskId);
-                // Socket will handle the deletion via useSocketTasks
             } catch (error) {
                 console.error('Error deleting task:', error);
             }
         }
     };
 
+    const handleTaskMove = async (taskId, newStatus) => {
+        try {
+            const tasksInNewStatus = getTasksByStatus(newStatus);
+            const newPosition = tasksInNewStatus.length;
+            await updateTaskPosition(taskId, newStatus, newPosition);
+        } catch (error) {
+            console.error('Error moving task:', error);
+        }
+    };
+
     const handleDragStart = (e, task) => {
         console.log('Drag started:', task);
-        // Ensure we have the complete task object
-        const completeTask = activeTasks.find(t => t._id === task._id) || task;
-        setDraggedTask(completeTask);
+        setDraggedTask(task);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', task._id);
+        // Store the task data in case state gets lost
+        e.dataTransfer.setData('application/json', JSON.stringify(task));
         e.target.classList.add('card-flipping');
         setTimeout(() => {
             e.target.classList.remove('card-flipping');
@@ -243,25 +231,39 @@ const KanbanBoard = () => {
         e.dataTransfer.dropEffect = 'move';
     };
 
+    // Try using updateTaskPosition instead of updateTask
     const handleDrop = async (e, newStatus, newAssignedUser = null) => {
         e.preventDefault();
         
+        // Get task from state or drag data
+        let taskToMove = draggedTask;
+        if (!taskToMove) {
+            try {
+                const taskData = e.dataTransfer.getData('application/json');
+                if (taskData) {
+                    taskToMove = JSON.parse(taskData);
+                }
+            } catch (error) {
+                console.error('Error parsing drag data:', error);
+            }
+        }
+        
         console.log('Drop event:', {
             draggedTask,
+            taskToMove,
             newStatus,
             newAssignedUser,
-            originalStatus: draggedTask?.status,
-            activeTasks: activeTasks.length
+            originalStatus: taskToMove?.status
         });
 
-        if (!draggedTask || !draggedTask._id) {
-            console.log('No valid dragged task found');
+        if (!taskToMove) {
+            console.log('No dragged task found');
             return;
         }
 
         try {
-            const currentUserId = draggedTask.assignedUser?._id || draggedTask.assignedUser;
-            const statusChanged = draggedTask.status !== newStatus;
+            const currentUserId = taskToMove.assignedUser?._id || taskToMove.assignedUser;
+            const statusChanged = taskToMove.status !== newStatus;
             const userChanged = newAssignedUser && newAssignedUser !== currentUserId;
 
             console.log('Change detection:', {
@@ -272,34 +274,37 @@ const KanbanBoard = () => {
             });
 
             if (statusChanged) {
+                // Use updateTaskPosition for status changes
                 const tasksInNewStatus = getTasksByStatus(newStatus);
                 const newPosition = tasksInNewStatus.length;
                 
                 console.log('Using updateTaskPosition:', {
-                    taskId: draggedTask._id,
+                    taskId: taskToMove._id,
                     newStatus,
                     newPosition
                 });
 
-                await updateTaskPosition(draggedTask._id, newStatus, newPosition);
+                await updateTaskPosition(taskToMove._id, newStatus, newPosition);
                 console.log('Task position updated successfully');
             } else if (userChanged) {
+                // Only update assignedUser if status didn't change
                 const updateData = {
                     assignedUser: newAssignedUser
                 };
 
                 console.log('Updating assigned user:', {
-                    taskId: draggedTask._id,
+                    taskId: taskToMove._id,
                     updateData
                 });
 
-                await updateTask(draggedTask._id, updateData);
+                await updateTask(taskToMove._id, updateData);
                 console.log('Task assigned user updated successfully');
             } else {
                 console.log('No changes detected, skipping update');
             }
         } catch (error) {
             console.error('Error updating task:', error);
+            // Show more detailed error info
             if (error.response) {
                 console.error('Response data:', error.response.data);
                 console.error('Response status:', error.response.status);
@@ -330,8 +335,22 @@ const KanbanBoard = () => {
         };
     };
 
-    // Don't render if tasks are not initialized
-    if (loading || (!tasksInitialized && initialTasks.length === 0)) {
+    // Get online users working on each column
+    const getOnlineUsersForColumn = (status) => {
+        const columnTasks = getTasksByStatus(status);
+        const assignedUserIds = columnTasks
+            .map(task => task.assignedUser?._id || task.assignedUser)
+            .filter(Boolean);
+        
+        return onlineUsers.filter(user => assignedUserIds.includes(user.userId));
+    };
+
+    // Get typing users for specific tasks
+    const getTypingUsersForTask = (taskId) => {
+        return typingUsers.filter(user => user.taskId === taskId);
+    };
+
+    if (loading) {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
@@ -358,21 +377,50 @@ const KanbanBoard = () => {
 
     return (
         <div className="kanban-board">
-            {/* Notifications */}
-            <NotificationContainer 
-                notifications={notifications}
-                onRemove={removeNotification}
-                onClear={clearNotifications}
-            />
+            {/* Real-time notifications */}
+            {notifications.length > 0 && (
+                <div className="notifications-container">
+                    {notifications.map(notification => (
+                        <div 
+                            key={notification.id} 
+                            className={`notification notification-${notification.type}`}
+                            onClick={() => removeNotification(notification.id)}
+                        >
+                            <span>{notification.message}</span>
+                            <button className="notification-close">×</button>
+                        </div>
+                    ))}
+                    {notifications.length > 1 && (
+                        <button 
+                            className="clear-all-notifications"
+                            onClick={clearNotifications}
+                        >
+                            Clear All
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="kanban-header">
                 <h1>Task Board</h1>
+                <div className="header-info">
+                    {/* Online users indicator */}
+                    <div className="online-users">
+                        <span className="online-count">{onlineUsers.length} online</span>
+                        <div className="online-user-list">
+                            {onlineUsers.map(user => (
+                                <div key={user.userId} className="online-user">
+                                    <div className="user-avatar">
+                                        {user.username?.[0]?.toUpperCase() || 'U'}
+                                    </div>
+                                    <span className="user-name">{user.username}</span>
+                                    <div className="online-indicator"></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
                 <div className="header-actions">
-                    <OnlineUsers 
-                        users={onlineUsers} 
-                        typingUsers={typingUsers}
-                        allUsers={users}
-                    />
                     <button className="btn btn-primary" onClick={() => handleCreateTask()}>
                         + Add New Task
                     </button>
@@ -390,9 +438,9 @@ const KanbanBoard = () => {
                 sortOrder={sortOrder}
                 setSortOrder={setSortOrder}
                 users={users}
-                onTyping={handleTyping}
+                onlineUsers={onlineUsers}
                 taskCounts={{
-                    total: activeTasks.length,
+                    total: realtimeTasks.length,
                     todo: getTasksByStatus('todo').length,
                     inProgress: getTasksByStatus('in-progress').length,
                     done: getTasksByStatus('done').length
@@ -406,19 +454,24 @@ const KanbanBoard = () => {
                         column={column}
                         tasks={getTasksByStatus(column.status)}
                         stats={getColumnStats(column.status)}
+                        onlineUsers={getOnlineUsersForColumn(column.status)}
+                        typingUsers={typingUsers}
                         onCreateTask={handleCreateTask}
                         onEditTask={handleEditTask}
                         onDeleteTask={handleDeleteTask}
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop}
+                        onUserDragOver={handleUserDragOver}
+                        onUserDrop={handleUserDrop}
+                        onUserDragOver={handleUserDragOver}
+                        onUserDrop={handleUserDrop}
                         isDraggedOver={draggedTask && draggedTask.status !== column.status}
-                        typingUsers={typingUsers.filter(user => user.location === `column_${column.status}`)}
+                        draggedOverUser={draggedOverUser}
+                        getTypingUsersForTask={getTypingUsersForTask}
                     />
                 ))}
             </div>
-            // Add this before the closing div of your kanban-board:
-
 
             {showModal && (
                 <TaskModal
@@ -427,11 +480,14 @@ const KanbanBoard = () => {
                     task={editingTask}
                     onSave={handleSaveTask}
                     users={users}
-                    onTyping={handleTyping}
+                    onlineUsers={onlineUsers}
+                    typingUsers={typingUsers}
+                    isTyping={isTyping}
+                    setIsTyping={setIsTyping}
                 />
             )}
         </div>
     );
 };
 
-export default KanbanBoard;
+export default RealtimeKanbanBoard;
