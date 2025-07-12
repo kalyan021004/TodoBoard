@@ -1,5 +1,4 @@
 import React from 'react';
-import RealtimeKanbanBoard from '../components/RealtimeKanbanBoard';
 import KanbanBoard from '../components/KanbanBoard';
 
 const Dashboard = () => {

@@ -2,6 +2,8 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 let io;
 const onlineUsers = new Map(); // Store online users: socketId -> user data
@@ -9,7 +11,7 @@ const onlineUsers = new Map(); // Store online users: socketId -> user data
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin:"https://todo-board-five.vercel.app" || "http://localhost:5173",
+      origin:process.env.FRONTEND_URL || "http://localhost:5173",
       methods: ["GET", "POST", "PUT", "DELETE"],
       credentials: true
     }
