@@ -11,7 +11,7 @@ const onlineUsers = new Map(); // Store online users: socketId -> user data
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin:process.env.FRONTEND_URL || "http://localhost:5173",
+      origin:"https://todo-board-1.vercel.app" || "http://localhost:5173",
       methods: ["GET", "POST", "PUT", "DELETE"],
       credentials: true
     }
