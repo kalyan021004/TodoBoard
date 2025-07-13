@@ -1,4 +1,4 @@
-// socket/socket.js - Complete Fixed Version
+// socket/socket.js
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
@@ -10,16 +10,9 @@ const onlineUsers = new Map();
 
 const isProd = process.env.NODE_ENV === 'production';
 
-const allowedOrigins = isProd
-  ? ['https://todo-board-1.vercel.app']
-  : [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://localhost:5000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000'
-    ];
+const allowedOrigins ='https://todo-board-1.vercel.app';
+  
+    
 
 export const initializeSocket = (server) => {
   io = new Server(server, {
@@ -120,51 +113,16 @@ export const initializeSocket = (server) => {
       }, 1000);
     }
 
-    // ✅ FIXED: Task events now emit to ALL clients including sender
-    socket.on('task_created', (data) => {
-      console.log('📝 Broadcasting task_created to ALL clients:', data);
-      io.emit('task_created', {
-        ...data,
-        createdBy: username,
-        timestamp: new Date().toISOString()
-      });
-    });
+    // Task events
+    const broadcastTask = (event) => (data) => {
+      socket.broadcast.emit(event, data);
+    };
 
-    socket.on('task_updated', (data) => {
-      console.log('📝 Broadcasting task_updated to ALL clients:', data);
-      io.emit('task_updated', {
-        ...data,
-        updatedBy: username,
-        timestamp: new Date().toISOString()
-      });
-    });
-
-    socket.on('task_deleted', (data) => {
-      console.log('📝 Broadcasting task_deleted to ALL clients:', data);
-      io.emit('task_deleted', {
-        ...data,
-        deletedBy: username,
-        timestamp: new Date().toISOString()
-      });
-    });
-
-    socket.on('task_moved', (data) => {
-      console.log('📝 Broadcasting task_moved to ALL clients:', data);
-      io.emit('task_moved', {
-        ...data,
-        movedBy: username,
-        timestamp: new Date().toISOString()
-      });
-    });
-
-    socket.on('task_assigned', (data) => {
-      console.log('📝 Broadcasting task_assigned to ALL clients:', data);
-      io.emit('task_assigned', {
-        ...data,
-        assignedBy: username,
-        timestamp: new Date().toISOString()
-      });
-    });
+    socket.on('task_created', broadcastTask('task_created'));
+    socket.on('task_updated', broadcastTask('task_updated'));
+    socket.on('task_deleted', broadcastTask('task_deleted'));
+    socket.on('task_moved', broadcastTask('task_moved'));
+    socket.on('task_assigned', broadcastTask('task_assigned'));
 
     socket.on('disconnect', (reason) => {
       onlineUsers.delete(socket.id);
