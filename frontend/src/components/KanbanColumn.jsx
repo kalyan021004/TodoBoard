@@ -1,7 +1,7 @@
 // components/KanbanColumn.js
 import React from 'react';
 import TaskCard from './TaskCard';
-import './KanbanColumn.css';
+import '../styles/KanbanColumn.css';
 
 const KanbanColumn = ({
     column,

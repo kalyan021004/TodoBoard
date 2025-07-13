@@ -1,6 +1,6 @@
 // components/TaskCard.js
 import React from 'react';
-import './TaskCard.css';
+import '../styles/TaskCard.css';
 
 const TaskCard = ({ 
     task, 

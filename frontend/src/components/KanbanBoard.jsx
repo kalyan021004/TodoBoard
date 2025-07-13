@@ -11,7 +11,7 @@ import { useSocketUsers } from '../hooks/useSocketUsers';
 import { useSocket } from '../context/SocketContext';
 import SocketDebugPanel from './SocketDebugPanel';
 
-import './KanbanBoard.css';
+import '../styles/KanbanBoard.css';
 
 const KanbanBoard = () => {
     const navigate = useNavigate();

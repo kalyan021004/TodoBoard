@@ -3,7 +3,7 @@ import TaskCard from './TaskCard';
 import TaskForm from './TaskForm';
 import Modal from './Modal';
 import { useTasks } from '../hooks/useTasks';
-import './TaskList.css';
+import '../styles/TaskList.css';
 
 const TaskList = () => {
   const { tasks, loading, error, fetchTasks, createTask, updateTask, deleteTask } = useTasks();

@@ -1,6 +1,6 @@
 // components/TaskModal.js
 import React, { useState, useEffect } from 'react';
-import './TaskModal.css';
+import '../styles/TaskModal.css';
 
 const TaskModal = ({ isOpen, onClose, task, onSave, users = [] }) => {
     const [formData, setFormData] = useState({

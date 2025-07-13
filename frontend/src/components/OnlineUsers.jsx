@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import './OnlineUsers.css';
+import '../styles/OnlineUsers.css';
 
 const OnlineUsers = ({ users, typingUsers, allUsers }) => {
   const [isExpanded, setIsExpanded] = useState(false);

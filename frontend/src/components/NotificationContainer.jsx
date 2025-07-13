@@ -1,5 +1,5 @@
 import React from 'react';
-import './NotificationContainer.css';
+import '../styles/NotificationContainer.css';
 
 const NotificationContainer = ({ notifications, onRemove, onClear }) => {
     console.log('NotificationContainer render:', {
