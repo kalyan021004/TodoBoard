@@ -72,6 +72,17 @@ app.get('/api/health', (req, res) => {
     socketConnections: io?.engine?.clientsCount || 0
   });
 });
+// In server.js
+app.get('/api/socket-debug', (req, res) => {
+  const users = getOnlineUsers();
+  res.json({
+    onlineCount: users.length,
+    users,
+    socketConnected: !!io,
+    timestamp: new Date().toISOString()
+  });
+});
+
 
 // ✅ Initialize Socket.IO
 io = initializeSocket(server);

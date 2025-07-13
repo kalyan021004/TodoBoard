@@ -6,80 +6,60 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 let io;
-const onlineUsers = new Map(); // Store online users: socketId -> user data
+const onlineUsers = new Map();
+
+const isProd = process.env.NODE_ENV === 'production';
+
+const allowedOrigins = isProd
+  ? ['https://todo-board-1.vercel.app']
+  : [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000'
+    ];
 
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps)
+      origin(origin, callback) {
         if (!origin) return callback(null, true);
-        
-        const allowedOrigins = [
-          'https://todo-board-1.vercel.app',  // Production frontend
-          'http://localhost:3000',
-          'http://localhost:5173',
-          'http://localhost:5174',
-          'http://localhost:5000',
-          'http://127.0.0.1:5173',
-          'http://127.0.0.1:3000',
-        ];
-
-        // Allow all localhost/127.0.0.1 origins for development
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          console.log(`✅ Socket.IO CORS allowed localhost origin: ${origin}`);
+        if (
+          allowedOrigins.includes(origin) ||
+          origin.includes('localhost') ||
+          origin.includes('127.0.0.1')
+        ) {
+          if (!isProd) console.log(`✅ Socket.IO CORS allowed origin: ${origin}`);
           return callback(null, true);
         }
-
-        if (allowedOrigins.includes(origin)) {
-          console.log(`✅ Socket.IO CORS allowed origin: ${origin}`);
-          callback(null, true);
-        } else {
-          console.log(`❌ Socket.IO CORS blocked origin: ${origin}`);
-          console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
-          callback(new Error('Not allowed by CORS'));
-        }
+        console.warn(`❌ Socket.IO CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
       },
       credentials: true,
-      methods: ["GET", "POST", "PUT", "DELETE"]
+      methods: ['GET', 'POST', 'PUT', 'DELETE']
     }
   });
 
   console.log('🚀 Socket.IO server initialized');
 
-  // 🔐 Authentication middleware - Let's make this more robust
   io.use(async (socket, next) => {
     try {
-      console.log('🔑 Authentication attempt for socket:', socket.id);
-      console.log('🔑 Auth data:', socket.handshake.auth);
-      
       const token = socket.handshake.auth.token;
-      if (!token) {
-        console.error('❌ No token provided');
-        return next(new Error('No token provided'));
-      }
+      if (!token) return next(new Error('No token provided'));
 
-      console.log('🔑 Token received:', token.substring(0, 20) + '...');
-      
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('🔑 Token decoded:', decoded);
-      
-      // Fix: Use decoded.userId instead of decoded.id
       const userId = decoded.userId || decoded.id;
       const user = await User.findById(userId).select('-password');
-      console.log('🔑 User found:', user ? user.username : 'null');
-      
-      if (!user) {
-        console.error('❌ User not found');
-        return next(new Error('User not found'));
-      }
 
-      // Attach user data to socket
+      if (!user) return next(new Error('User not found'));
+
       socket.userId = user._id.toString();
       socket.username = user.username;
       socket.email = user.email;
-      
-      console.log('✅ Authentication successful for:', socket.username);
+
+      if (!isProd) console.log(`✅ Authenticated socket for ${user.username}`);
       next();
     } catch (error) {
       console.error('❌ Socket authentication error:', error.message);
@@ -88,134 +68,91 @@ export const initializeSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
-    console.log(`🔌 User connected: ${socket.username} (${socket.id})`);
-    
-    // 👥 Add user to online users
+    const { username, userId, email } = socket;
+    console.log(`🔌 Connected: ${username} (${socket.id})`);
+
     onlineUsers.set(socket.id, {
-      userId: socket.userId,
-      username: socket.username,
-      email: socket.email,
+      userId,
+      username,
+      email,
       socketId: socket.id,
       connectedAt: new Date()
     });
 
-    console.log(`👥 Total online users: ${onlineUsers.size}`);
+    socket.broadcast.emit('user_connected', { userId, username, email });
 
-    // 📢 Broadcast user connected to all other clients
-    socket.broadcast.emit('user_connected', {
-      userId: socket.userId,
-      username: socket.username,
-      email: socket.email
-    });
-
-    // 📊 Handle get online users request
     socket.on('get_online_users', () => {
       const users = Array.from(onlineUsers.values()).map(user => ({
         userId: user.userId,
         username: user.username,
         email: user.email
       }));
-      console.log(`📋 Sending ${users.length} online users to ${socket.username}`);
-      console.log('📋 Users:', users.map(u => u.username));
       socket.emit('online_users', users);
     });
 
-    // Handle user joining (optional - for user-specific notifications)
     socket.on('join_user', (userId) => {
       socket.join(`user_${userId}`);
-      console.log(`👤 User ${userId} joined their room`);
     });
-    
-    // Handle ping/pong for connection testing
+
     socket.on('ping', () => {
-      console.log('📡 Ping received from:', socket.username);
       socket.emit('pong');
     });
 
-    // 💬 Handle user typing
     socket.on('user_typing', (data) => {
       socket.broadcast.emit('user_typing', {
-        userId: socket.userId,
-        username: socket.username,
+        userId,
+        username,
         isTyping: data.isTyping
       });
     });
-    
-    // Handle test events (for debugging)
-    socket.on('test_event', (data) => {
-      console.log('🧪 Test event received:', data);
-      socket.emit('test_response', { message: 'Test event received successfully!' });
-    });
 
-    // 🔄 Handle task events (these come from your API routes)
-    socket.on('task_created', (data) => {
-      socket.broadcast.emit('task_created', data);
-    });
-
-    socket.on('task_updated', (data) => {
-      socket.broadcast.emit('task_updated', data);
-    });
-
-    socket.on('task_deleted', (data) => {
-      socket.broadcast.emit('task_deleted', data);
-    });
-
-    socket.on('task_moved', (data) => {
-      socket.broadcast.emit('task_moved', data);
-    });
-
-    socket.on('task_assigned', (data) => {
-      socket.broadcast.emit('task_assigned', data);
-    });
-    
-    // 🚪 Handle disconnect
-    socket.on('disconnect', (reason) => {
-      console.log(`❌ User disconnected: ${socket.username} (${socket.id}) - Reason: ${reason}`);
-      
-      // Get user data before removing
-      const userData = onlineUsers.get(socket.id);
-      
-      // Remove user from online users
-      onlineUsers.delete(socket.id);
-      
-      console.log(`👥 Total online users after disconnect: ${onlineUsers.size}`);
-      
-      // Broadcast user disconnected to all clients
-      if (userData) {
-        socket.broadcast.emit('user_disconnected', {
-          userId: userData.userId,
-          username: userData.username,
-          email: userData.email
+    // Debug: Emit a test task_created on every connection
+    if (!isProd) {
+      setTimeout(() => {
+        socket.emit('task_created', {
+          task: {
+            _id: 'debug_task_id',
+            title: 'Demo Task',
+            status: 'Todo'
+          },
+          createdBy: 'SocketBot'
         });
-      }
+      }, 1000);
+    }
+
+    // Task events
+    const broadcastTask = (event) => (data) => {
+      socket.broadcast.emit(event, data);
+    };
+
+    socket.on('task_created', broadcastTask('task_created'));
+    socket.on('task_updated', broadcastTask('task_updated'));
+    socket.on('task_deleted', broadcastTask('task_deleted'));
+    socket.on('task_moved', broadcastTask('task_moved'));
+    socket.on('task_assigned', broadcastTask('task_assigned'));
+
+    socket.on('disconnect', (reason) => {
+      onlineUsers.delete(socket.id);
+      socket.broadcast.emit('user_disconnected', { userId, username, email });
+      console.log(`❌ Disconnected: ${username} (${socket.id}) – Reason: ${reason}`);
     });
 
-    // 🚨 Handle errors
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
+    socket.on('error', (err) => {
+      console.error('❌ Socket error:', err.message);
     });
   });
 
-  // Handle connection errors
   io.on('connect_error', (error) => {
-    console.error('🚨 Socket connection error:', error);
+    console.error('🚨 Socket connect_error:', error.message);
   });
 
   return io;
 };
 
 export const getIO = () => {
-  if (!io) {
-    throw new Error('Socket.io not initialized!');
-  }
+  if (!io) throw new Error('Socket.io not initialized!');
   return io;
 };
 
-// 📈 Helper functions for getting online user stats
-export const getOnlineUsers = () => {
-  return Array.from(onlineUsers.values());
-};
-
-export const getOnlineUsersCount = () => {
-  return onlineUsers.size;
-};
+export const getOnlineUsers = () => Array.from(onlineUsers.values());
+export const getOnlineUsersCount = () => onlineUsers.size;
