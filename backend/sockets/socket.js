@@ -10,9 +10,14 @@ const onlineUsers = new Map();
 
 const isProd = process.env.NODE_ENV === 'production';
 
-const allowedOrigins ='https://todo-board-1.vercel.app';
-  
-    
+const allowedOrigins = isProd
+  ? ['https://todo-board-1.vercel.app']
+  : [
+      
+      'http://localhost:5000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000'
+    ];
 
 export const initializeSocket = (server) => {
   io = new Server(server, {

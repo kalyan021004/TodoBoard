@@ -19,8 +19,15 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-   const allowedOrigins ='https://todo-board-1.vercel.app';
-
+    const allowedOrigins = [
+      'https://todo-board-1.vercel.app',  // Production frontend
+      'http://localhost:3000',            // React dev server
+      'http://localhost:5173',            // Vite dev server
+      'http://localhost:5174',            // Vite dev server (alternative port)
+      'http://localhost:5000',           // Your local backend port
+      'http://127.0.0.1:5173',           // Alternative localhost format
+      'http://127.0.0.1:3000',           // Alternative localhost format
+    ];
 
     // Allow all localhost/127.0.0.1 origins for development
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
@@ -65,17 +72,6 @@ app.get('/api/health', (req, res) => {
     socketConnections: io?.engine?.clientsCount || 0
   });
 });
-// In server.js
-app.get('/api/socket-debug', (req, res) => {
-  const users = getOnlineUsers();
-  res.json({
-    onlineCount: users.length,
-    users,
-    socketConnected: !!io,
-    timestamp: new Date().toISOString()
-  });
-});
-
 
 // ✅ Initialize Socket.IO
 io = initializeSocket(server);
