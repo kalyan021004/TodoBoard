@@ -11,9 +11,37 @@ const onlineUsers = new Map(); // Store online users: socketId -> user data
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin:"https://todo-board-1.vercel.app" || "http://localhost:5173",
-      methods: ["GET", "POST", "PUT", "DELETE"],
-      credentials: true
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps)
+        if (!origin) return callback(null, true);
+        
+        const allowedOrigins = [
+          'https://todo-board-1.vercel.app',  // Production frontend
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://localhost:5174',
+          'http://localhost:5000',
+          'http://127.0.0.1:5173',
+          'http://127.0.0.1:3000',
+        ];
+
+        // Allow all localhost/127.0.0.1 origins for development
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          console.log(`✅ Socket.IO CORS allowed localhost origin: ${origin}`);
+          return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+          console.log(`✅ Socket.IO CORS allowed origin: ${origin}`);
+          callback(null, true);
+        } else {
+          console.log(`❌ Socket.IO CORS blocked origin: ${origin}`);
+          console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE"]
     }
   });
 
