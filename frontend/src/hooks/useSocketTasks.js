@@ -1,4 +1,4 @@
-// hooks/useSocketTasks.js - Debug Version
+// hooks/useSocketTasks.js - Fixed Version with Browser Notifications
 import { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 
@@ -6,6 +6,70 @@ export const useSocketTasks = (initialTasks = []) => {
   const [tasks, setTasks] = useState(initialTasks);
   const [notifications, setNotifications] = useState([]);
   const { socket } = useSocket();
+
+  // Request notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // Notification permission handler
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      console.log('This browser does not support notifications');
+      return false;
+    }
+
+    if (Notification.permission === 'granted') {
+      return true;
+    }
+
+    if (Notification.permission === 'denied') {
+      console.log('Notification permission denied');
+      return false;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+      return false;
+    }
+  };
+
+  // Show browser notification
+  const showBrowserNotification = async (title, body, icon = '/favicon.ico') => {
+    const hasPermission = await requestNotificationPermission();
+    
+    if (hasPermission) {
+      try {
+        const notification = new Notification(title, {
+          body,
+          icon,
+          tag: 'task-update',
+          requireInteraction: false,
+          silent: false
+        });
+
+        // Auto close after 4 seconds
+        setTimeout(() => {
+          notification.close();
+        }, 4000);
+
+        // Handle notification click
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+
+        return true;
+      } catch (error) {
+        console.error('Error showing notification:', error);
+        return false;
+      }
+    }
+    return false;
+  };
 
   // Add debug logging for socket connection
   useEffect(() => {
@@ -24,11 +88,13 @@ export const useSocketTasks = (initialTasks = []) => {
 
     console.log('useSocketTasks: Setting up socket listeners');
 
-    // Task event handlers with enhanced logging
+    // Task event handlers with enhanced logging and browser notifications
     const handleTaskCreated = (data) => {
       console.log('🔔 Socket event: task_created', data);
       setTasks(prev => [...prev, data.task]);
-      addNotification(`${data.createdBy} created a new task: ${data.task.title}`, 'success');
+      const message = `${data.createdBy} created a new task: ${data.task.title}`;
+      addNotification(message, 'success');
+      showBrowserNotification('New Task Created', message);
     };
 
     const handleTaskUpdated = (data) => {
@@ -36,13 +102,17 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      addNotification(`${data.updatedBy} updated task: ${data.task.title}`, 'info');
+      const message = `${data.updatedBy} updated task: ${data.task.title}`;
+      addNotification(message, 'info');
+      showBrowserNotification('Task Updated', message);
     };
 
     const handleTaskDeleted = (data) => {
       console.log('🔔 Socket event: task_deleted', data);
       setTasks(prev => prev.filter(task => task._id !== data.taskId));
-      addNotification(`${data.deletedBy} deleted a task`, 'warning');
+      const message = `${data.deletedBy} deleted a task`;
+      addNotification(message, 'warning');
+      showBrowserNotification('Task Deleted', message);
     };
 
     const handleTaskMoved = (data) => {
@@ -50,7 +120,9 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      addNotification(`${data.movedBy} moved task: ${data.task.title} to ${data.task.status}`, 'info');
+      const message = `${data.movedBy} moved task: ${data.task.title} to ${data.task.status}`;
+      addNotification(message, 'info');
+      showBrowserNotification('Task Moved', message);
     };
 
     const handleTaskAssigned = (data) => {
@@ -58,7 +130,9 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      addNotification(`${data.assignedBy} assigned task: ${data.task.title}`, 'info');
+      const message = `${data.assignedBy} assigned task: ${data.task.title}`;
+      addNotification(message, 'info');
+      showBrowserNotification('Task Assigned', message);
     };
 
     const handleTaskAssignedToYou = (data) => {
@@ -66,12 +140,16 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      addNotification(`You have been assigned to task: ${data.task.title}`, 'success');
+      const message = `You have been assigned to task: ${data.task.title}`;
+      addNotification(message, 'success');
+      showBrowserNotification('Task Assigned to You', message);
     };
 
     const handleTaskError = (data) => {
       console.log('🔔 Socket event: task_error', data);
-      addNotification(`Error: ${data.message}`, 'error');
+      const message = `Error: ${data.message}`;
+      addNotification(message, 'error');
+      showBrowserNotification('Task Error', message);
     };
 
     // Success handlers
@@ -95,11 +173,6 @@ export const useSocketTasks = (initialTasks = []) => {
       console.log('✅ Socket event: task_assigned_success', data);
     };
 
-    // Generic event listener to catch all events
-    const handleAnyEvent = (eventName, ...args) => {
-      console.log(`🎯 Socket event received: ${eventName}`, args);
-    };
-
     // Register event listeners
     socket.on('task_created', handleTaskCreated);
     socket.on('task_updated', handleTaskUpdated);
@@ -114,15 +187,7 @@ export const useSocketTasks = (initialTasks = []) => {
     socket.on('task_moved_success', handleTaskMovedSuccess);
     socket.on('task_assigned_success', handleTaskAssignedSuccess);
 
-    // Listen for ALL events for debugging
-    const originalEmit = socket.emit;
-    socket.emit = function(...args) {
-      console.log('📤 Socket emit:', args[0], args.slice(1));
-      return originalEmit.apply(socket, args);
-    };
-
-    // Log all incoming events
-    const originalOn = socket.on;
+    // Log all incoming events for debugging
     const originalOnevent = socket.onevent;
     socket.onevent = function(packet) {
       console.log('📥 Socket received:', packet.data);
@@ -182,7 +247,9 @@ export const useSocketTasks = (initialTasks = []) => {
   // Add a manual test function
   const testNotification = () => {
     console.log('🧪 Testing notification manually');
-    addNotification('This is a test notification!', 'success');
+    const message = 'This is a test notification!';
+    addNotification(message, 'success');
+    showBrowserNotification('Test Notification', message);
   };
 
   // Debug logging for state changes
@@ -196,6 +263,7 @@ export const useSocketTasks = (initialTasks = []) => {
     notifications,
     removeNotification,
     clearNotifications,
-    testNotification // Add this for manual testing
+    testNotification,
+    showBrowserNotification // Export for manual use
   };
 };

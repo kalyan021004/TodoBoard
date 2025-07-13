@@ -1,8 +1,9 @@
+// server.js - Complete Backend Server
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
-import { initializeSocket } from './sockets/socket.js';
+import { initializeSocket, getOnlineUsers } from './socket/socket.js';
 import connectDB from './config/db.js';
 import taskRoutes from './routes/task.routes.js';
 import userRoutes from './routes/user.routes.js';
@@ -53,7 +54,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // ✅ Connect to MongoDB
-await connectDB(); // make this top-level await or wrap in async IIFE if not using "type": "module"
+await connectDB();
 
 // ✅ JSON body parsing
 app.use(express.json());
@@ -63,8 +64,10 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 
+// ✅ Initialize Socket.IO
+const io = initializeSocket(server);
+
 // ✅ Health Check Endpoint
-let io;
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -72,7 +75,8 @@ app.get('/api/health', (req, res) => {
     socketConnections: io?.engine?.clientsCount || 0
   });
 });
-// In server.js
+
+// ✅ Socket Debug Endpoint
 app.get('/api/socket-debug', (req, res) => {
   const users = getOnlineUsers();
   res.json({
@@ -83,12 +87,9 @@ app.get('/api/socket-debug', (req, res) => {
   });
 });
 
-
-// ✅ Initialize Socket.IO
-io = initializeSocket(server);
-
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 Socket.IO initialized`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });

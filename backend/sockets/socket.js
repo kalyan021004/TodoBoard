@@ -1,4 +1,4 @@
-// socket/socket.js
+// socket/socket.js - Complete Fixed Version
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
@@ -120,16 +120,51 @@ export const initializeSocket = (server) => {
       }, 1000);
     }
 
-    // Task events
-    const broadcastTask = (event) => (data) => {
-      socket.broadcast.emit(event, data);
-    };
+    // ✅ FIXED: Task events now emit to ALL clients including sender
+    socket.on('task_created', (data) => {
+      console.log('📝 Broadcasting task_created to ALL clients:', data);
+      io.emit('task_created', {
+        ...data,
+        createdBy: username,
+        timestamp: new Date().toISOString()
+      });
+    });
 
-    socket.on('task_created', broadcastTask('task_created'));
-    socket.on('task_updated', broadcastTask('task_updated'));
-    socket.on('task_deleted', broadcastTask('task_deleted'));
-    socket.on('task_moved', broadcastTask('task_moved'));
-    socket.on('task_assigned', broadcastTask('task_assigned'));
+    socket.on('task_updated', (data) => {
+      console.log('📝 Broadcasting task_updated to ALL clients:', data);
+      io.emit('task_updated', {
+        ...data,
+        updatedBy: username,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on('task_deleted', (data) => {
+      console.log('📝 Broadcasting task_deleted to ALL clients:', data);
+      io.emit('task_deleted', {
+        ...data,
+        deletedBy: username,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on('task_moved', (data) => {
+      console.log('📝 Broadcasting task_moved to ALL clients:', data);
+      io.emit('task_moved', {
+        ...data,
+        movedBy: username,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on('task_assigned', (data) => {
+      console.log('📝 Broadcasting task_assigned to ALL clients:', data);
+      io.emit('task_assigned', {
+        ...data,
+        assignedBy: username,
+        timestamp: new Date().toISOString()
+      });
+    });
 
     socket.on('disconnect', (reason) => {
       onlineUsers.delete(socket.id);
