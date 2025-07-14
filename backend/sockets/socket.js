@@ -1,156 +1,180 @@
-// socket/socket.js
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
+
 dotenv.config();
 
 let io;
-const onlineUsers = new Map();
+const onlineUsers = new Map(); // Tracks online users by userId
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// Rate limiter for Socket.IO auth
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // Max 50 auth attempts per window
+  message: 'Too many authentication attempts, please try again later.'
+});
+
+// Allowed origins (strict in production)
 const allowedOrigins = isProd
-  ? ['https://todo-board-1.vercel.app']
-  : [
-      
-      'http://localhost:5000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000'
-    ];
+  ? process.env.FRONTEND_URL.split(',') // Comma-separated in .env
+  : ['http://localhost:5000', 'http://127.0.0.1:5173'];
 
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin(origin, callback) {
-        if (!origin) return callback(null, true);
-        if (
-          allowedOrigins.includes(origin) ||
-          origin.includes('localhost') ||
-          origin.includes('127.0.0.1')
-        ) {
-          if (!isProd) console.log(`✅ Socket.IO CORS allowed origin: ${origin}`);
-          return callback(null, true);
-        }
-        console.warn(`❌ Socket.IO CORS blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
-      },
+      origin: isProd 
+        ? allowedOrigins // Strict origin match
+        : (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+              callback(null, true);
+            } else {
+              console.warn(`❌ Blocked origin: ${origin}`);
+              callback(new Error('Not allowed by CORS'));
+            }
+          },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE']
+      methods: ['GET', 'POST'] // Minimal methods
+    },
+    // Production-optimized settings
+    pingInterval: 25000,  // 25s (reduces unnecessary traffic)
+    pingTimeout: 20000,   // 20s (faster failure detection)
+    maxHttpBufferSize: 1e6, // 1MB max payload
+    serveClient: false,   // Disable client file serving
+    transports: ['websocket'], // WS-only in production
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 5 * 60 * 1000, // 5min recovery window
+      skipMiddlewares: true
     }
   });
 
-  console.log('🚀 Socket.IO server initialized');
+  console.log('🚀 Socket.IO server running in', isProd ? 'PRODUCTION' : 'DEVELOPMENT');
 
+  // Authentication middleware (rate-limited)
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
-      if (!token) return next(new Error('No token provided'));
+      if (!token) {
+        console.warn('⚠️ No token provided');
+        return next(new Error('Authentication required'));
+      }
+
+      // Apply rate limiting
+      authLimiter(socket.request, {}, (err) => {
+        if (err) return next(new Error('Too many requests'));
+      });
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const userId = decoded.userId || decoded.id;
-      const user = await User.findById(userId).select('-password');
+      const user = await User.findById(decoded.userId).select('-password');
 
-      if (!user) return next(new Error('User not found'));
+      if (!user) {
+        console.warn(`⚠️ Invalid user ID: ${decoded.userId}`);
+        return next(new Error('User not found'));
+      }
 
       socket.userId = user._id.toString();
       socket.username = user.username;
       socket.email = user.email;
 
-      if (!isProd) console.log(`✅ Authenticated socket for ${user.username}`);
       next();
     } catch (error) {
-      console.error('❌ Socket authentication error:', error.message);
-      next(new Error('Authentication failed: ' + error.message));
+      console.error('❌ Auth error:', error.message);
+      next(new Error('Authentication failed'));
     }
   });
 
   io.on('connection', (socket) => {
-    const { username, userId, email } = socket;
-    console.log(`🔌 Connected: ${username} (${socket.id})`);
+    const { userId, username, email } = socket;
 
-    onlineUsers.set(socket.id, {
+    // Track user
+    onlineUsers.set(userId, {
       userId,
       username,
       email,
       socketId: socket.id,
-      connectedAt: new Date()
+      connectedAt: new Date(),
+      lastSeen: null
     });
 
-    socket.broadcast.emit('user_connected', { userId, username, email });
+    // Join user-specific room
+    socket.join(`user_${userId}`);
+    
+    // Notify others
+    socket.broadcast.emit('user_connected', { userId, username });
 
-    socket.on('get_online_users', () => {
-      const users = Array.from(onlineUsers.values()).map(user => ({
-        userId: user.userId,
-        username: user.username,
-        email: user.email
-      }));
-      socket.emit('online_users', users);
-    });
+    // Send online users list
+    updateOnlineUsers();
 
-    socket.on('join_user', (userId) => {
-      socket.join(`user_${userId}`);
-    });
+    // Handle events
+    socket.on('get_online_users', () => updateOnlineUsers());
 
-    socket.on('ping', () => {
-      socket.emit('pong');
-    });
-
-    socket.on('user_typing', (data) => {
-      socket.broadcast.emit('user_typing', {
+    socket.on('typing', (data) => {
+      if (!data.receiverId) return;
+      socket.to(`user_${data.receiverId}`).emit('typing', {
         userId,
-        username,
         isTyping: data.isTyping
       });
     });
 
-    // Debug: Emit a test task_created on every connection
-    if (!isProd) {
-      setTimeout(() => {
-        socket.emit('task_created', {
-          task: {
-            _id: 'debug_task_id',
-            title: 'Demo Task',
-            status: 'Todo'
-          },
-          createdBy: 'SocketBot'
-        });
-      }, 1000);
-    }
-
-    // Task events
-    const broadcastTask = (event) => (data) => {
-      socket.broadcast.emit(event, data);
+    // Task events (with validation)
+    const handleTaskEvent = (event, data) => {
+      if (!data.taskId || !userId) {
+        console.warn(`⚠️ Invalid ${event} from ${userId}`);
+        return;
+      }
+      io.emit(event, { ...data, userId });
     };
 
-    socket.on('task_created', broadcastTask('task_created'));
-    socket.on('task_updated', broadcastTask('task_updated'));
-    socket.on('task_deleted', broadcastTask('task_deleted'));
-    socket.on('task_moved', broadcastTask('task_moved'));
-    socket.on('task_assigned', broadcastTask('task_assigned'));
+    socket.on('task_created', (data) => handleTaskEvent('task_created', data));
+    socket.on('task_updated', (data) => handleTaskEvent('task_updated', data));
+    socket.on('task_deleted', (data) => handleTaskEvent('task_deleted', data));
 
-    socket.on('disconnect', (reason) => {
-      onlineUsers.delete(socket.id);
-      socket.broadcast.emit('user_disconnected', { userId, username, email });
-      console.log(`❌ Disconnected: ${username} (${socket.id}) – Reason: ${reason}`);
-    });
-
-    socket.on('error', (err) => {
-      console.error('❌ Socket error:', err.message);
+    // Disconnection handler
+    socket.on('disconnect', () => {
+      const user = onlineUsers.get(userId);
+      if (user) {
+        onlineUsers.set(userId, {
+          ...user,
+          lastSeen: new Date(),
+          socketId: null
+        });
+      }
+      io.emit('user_disconnected', { userId });
+      updateOnlineUsers();
     });
   });
 
-  io.on('connect_error', (error) => {
-    console.error('🚨 Socket connect_error:', error.message);
-  });
+  // Helper: Update all clients with online users
+  const updateOnlineUsers = () => {
+    const users = Array.from(onlineUsers.values())
+      .filter(user => user.socketId)
+      .map(({ userId, username, lastSeen }) => ({
+        userId,
+        username,
+        lastSeen
+      }));
+    io.emit('online_users', users);
+  };
 
   return io;
 };
 
+// Utility exports
 export const getIO = () => {
   if (!io) throw new Error('Socket.io not initialized!');
   return io;
 };
 
+export const sendNotification = (userId, message) => {
+  const user = onlineUsers.get(userId);
+  if (user?.socketId) {
+    io.to(user.socketId).emit('notification', message);
+    return true;
+  }
+  return false;
+};
+
 export const getOnlineUsers = () => Array.from(onlineUsers.values());
-export const getOnlineUsersCount = () => onlineUsers.size;
