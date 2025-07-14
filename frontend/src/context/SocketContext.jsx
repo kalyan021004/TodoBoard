@@ -1,4 +1,3 @@
-// contexts/SocketContext.js
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
@@ -17,165 +16,84 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const { user, token } = useAuth();
 
   useEffect(() => {
-    console.log('🔄 SocketProvider useEffect triggered');
-    console.log('👤 User:', user ? user.username : 'null');
-    console.log('🔑 Token:', token ? token.substring(0, 20) + '...' : 'null');
-    
     if (user && token) {
-      console.log('🚀 Initializing socket connection...');
-      
-      // Initialize socket connection
       const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
-        auth: {
-          token: token
-        },
+        auth: { token },
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        transports: ['websocket'],
+        withCredentials: true
       });
 
       setSocket(newSocket);
 
-      // Connection event handlers
+      // Connection events
       newSocket.on('connect', () => {
-        console.log('✅ Connected to server');
         setIsConnected(true);
         setConnectionStatus('connected');
-        
-        // Get online users when connected
-        console.log('📡 Emitting get_online_users');
         newSocket.emit('get_online_users');
       });
 
       newSocket.on('disconnect', () => {
-        console.log('❌ Disconnected from server');
         setIsConnected(false);
         setConnectionStatus('disconnected');
-        setOnlineUsers([]);
       });
 
       newSocket.on('connect_error', (error) => {
-        console.error('🚨 Connection error:', error);
+        console.error('Connection error:', error);
         setConnectionStatus('error');
       });
 
-      newSocket.on('reconnect', (attemptNumber) => {
-        console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
-        setConnectionStatus('connected');
-      });
-
-      newSocket.on('reconnect_attempt', (attemptNumber) => {
-        console.log(`🔄 Reconnection attempt ${attemptNumber}`);
-        setConnectionStatus('reconnecting');
-      });
-
-      newSocket.on('reconnect_error', (error) => {
-        console.error('🚨 Reconnection error:', error);
-        setConnectionStatus('reconnecting');
-      });
-
-      newSocket.on('reconnect_failed', () => {
-        console.error('🚨 Reconnection failed');
-        setConnectionStatus('failed');
-      });
-
-      // User presence handlers
+      // User presence events
       newSocket.on('user_connected', (data) => {
-        console.log(`👋 User connected: ${data.username}`);
         setOnlineUsers(prev => {
           const exists = prev.find(u => u.userId === data.userId);
-          if (!exists) {
-            const newUsers = [...prev, data];
-            console.log('👥 Updated online users (user_connected):', newUsers.length);
-            return newUsers;
-          }
-          return prev;
+          return exists ? prev : [...prev, data];
         });
       });
 
       newSocket.on('user_disconnected', (data) => {
-        console.log(`👋 User disconnected: ${data.username}`);
-        setOnlineUsers(prev => {
-          const newUsers = prev.filter(u => u.userId !== data.userId);
-          console.log('👥 Updated online users (user_disconnected):', newUsers.length);
-          return newUsers;
-        });
+        setOnlineUsers(prev => prev.filter(u => u.userId !== data.userId));
       });
 
       newSocket.on('online_users', (users) => {
-        console.log('📋 Received online users:', users);
-        console.log('📋 Users count:', users.length);
-        console.log('📋 Users list:', users.map(u => u.username));
         setOnlineUsers(users);
       });
 
-      // Ping/pong for connection monitoring
-      const pingInterval = setInterval(() => {
-        if (newSocket.connected) {
-          console.log('📡 Sending ping');
-          newSocket.emit('ping');
-        }
-      }, 30000); // Ping every 30 seconds
-
-      newSocket.on('pong', () => {
-        console.log('📡 Pong received');
-        setConnectionStatus('connected');
+      // Notification events
+      newSocket.on('notification', (notification) => {
+        setNotifications(prev => [...prev, notification]);
       });
 
-      // Cleanup on unmount
+      // Task events
+      newSocket.on('task_created', (task) => {
+        // Handle task creation in your state
+      });
+
+      newSocket.on('task_updated', (task) => {
+        // Handle task update in your state
+      });
+
+      newSocket.on('task_deleted', (taskId) => {
+        // Handle task deletion in your state
+      });
+
+      // Cleanup
       return () => {
-        console.log('🧹 Cleaning up socket connection');
-        clearInterval(pingInterval);
         newSocket.disconnect();
       };
-    } else {
-      console.log('⏳ Waiting for user and token...');
     }
   }, [user, token]);
 
-  // Debug: Log online users changes
-  useEffect(() => {
-    console.log('👥 Online users state changed:', onlineUsers.length);
-    onlineUsers.forEach(user => console.log('  - ', user.username));
-  }, [onlineUsers]);
-
-  const emitTaskCreated = (taskData) => {
+  const emitEvent = (eventName, data) => {
     if (socket && isConnected) {
-      socket.emit('task_created', taskData);
-    }
-  };
-
-  const emitTaskUpdated = (taskId, updates) => {
-    if (socket && isConnected) {
-      socket.emit('task_updated', { taskId, updates });
-    }
-  };
-
-  const emitTaskDeleted = (taskId) => {
-    if (socket && isConnected) {
-      socket.emit('task_deleted', { taskId });
-    }
-  };
-
-  const emitTaskMoved = (taskId, newStatus, newPosition) => {
-    if (socket && isConnected) {
-      socket.emit('task_moved', { taskId, newStatus, newPosition });
-    }
-  };
-
-  const emitTaskAssigned = (taskId, assignedUserId) => {
-    if (socket && isConnected) {
-      socket.emit('task_assigned', { taskId, assignedUserId });
-    }
-  };
-
-  const emitUserTyping = (isTyping) => {
-    if (socket && isConnected) {
-      socket.emit('user_typing', { isTyping });
+      socket.emit(eventName, data);
     }
   };
 
@@ -184,12 +102,14 @@ export const SocketProvider = ({ children }) => {
     isConnected,
     connectionStatus,
     onlineUsers,
-    emitTaskCreated,
-    emitTaskUpdated,
-    emitTaskDeleted,
-    emitTaskMoved,
-    emitTaskAssigned,
-    emitUserTyping
+    notifications,
+    clearNotifications: () => setNotifications([]),
+    emitTaskCreated: (data) => emitEvent('task_created', data),
+    emitTaskUpdated: (data) => emitEvent('task_updated', data),
+    emitTaskDeleted: (data) => emitEvent('task_deleted', data),
+    emitTaskMoved: (data) => emitEvent('task_moved', data),
+    emitTaskAssigned: (data) => emitEvent('task_assigned', data),
+    emitUserTyping: (data) => emitEvent('user_typing', data)
   };
 
   return (
