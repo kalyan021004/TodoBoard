@@ -18,17 +18,21 @@ const authLimiter = rateLimit({
   message: 'Too many authentication attempts, please try again later.'
 });
 
-// Allowed origins (strict in production)
+// Allowed origins - updated with Vercel URL
 const allowedOrigins = isProd
-  ? process.env.FRONTEND_URL.split(',') // Comma-separated in .env
-  : ['http://localhost:5000', 'http://127.0.0.1:5173'];
+  ? [
+      'https://todo-board-1.vercel.app', // Your Vercel frontend
+      ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []) // Existing configured URLs
+    ]
+  : ['http://localhost:5000', 'http://127.0.0.1:5173', 'http://localhost:3000'];
 
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
       origin: isProd 
-        ? allowedOrigins // Strict origin match
+        ? allowedOrigins // Strict origin match in production
         : (origin, callback) => {
+            // More flexible in development
             if (!origin || allowedOrigins.includes(origin)) {
               callback(null, true);
             } else {
@@ -37,23 +41,24 @@ export const initializeSocket = (server) => {
             }
           },
       credentials: true,
-      methods: ['GET', 'POST'] // Minimal methods
+      methods: ['GET', 'POST']
     },
-    // Production-optimized settings
-    pingInterval: 25000,  // 25s (reduces unnecessary traffic)
-    pingTimeout: 20000,   // 20s (faster failure detection)
-    maxHttpBufferSize: 1e6, // 1MB max payload
-    serveClient: false,   // Disable client file serving
-    transports: ['websocket'], // WS-only in production
+    // Optimization settings
+    pingInterval: 25000,
+    pingTimeout: 20000,
+    maxHttpBufferSize: 1e6,
+    serveClient: false,
+    transports: isProd ? ['websocket'] : ['websocket', 'polling'],
     connectionStateRecovery: {
-      maxDisconnectionDuration: 5 * 60 * 1000, // 5min recovery window
+      maxDisconnectionDuration: 5 * 60 * 1000,
       skipMiddlewares: true
     }
   });
 
   console.log('🚀 Socket.IO server running in', isProd ? 'PRODUCTION' : 'DEVELOPMENT');
+  console.log('🌐 Allowed origins:', allowedOrigins);
 
-  // Authentication middleware (rate-limited)
+  // Authentication middleware
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -88,6 +93,8 @@ export const initializeSocket = (server) => {
 
   io.on('connection', (socket) => {
     const { userId, username, email } = socket;
+
+    console.log(`🔗 New connection: ${username} (${userId})`);
 
     // Track user
     onlineUsers.set(userId, {
@@ -134,6 +141,8 @@ export const initializeSocket = (server) => {
 
     // Disconnection handler
     socket.on('disconnect', () => {
+      console.log(`🔌 Disconnected: ${username} (${userId})`);
+      
       const user = onlineUsers.get(userId);
       if (user) {
         onlineUsers.set(userId, {
