@@ -1,22 +1,32 @@
 /* components/KanbanBoard.css */
 .kanban-board {
-    padding: 20px;
-    min-height: 100vh;
-    background-color: #2789ec;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #f5f7fa;
+  position: relative;
+  padding: 20px;
+  box-sizing: border-box;
+  color: #333; /* Improved base text color */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* More readable font stack */
+  line-height: 1.5; /* Better line spacing */
 }
 
 .kanban-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    padding: 0 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  gap: 15px;
 }
 
 .kanban-header h1 {
-    margin: 0;
-    color: #2c3e50;
-    font-size: 2rem;
+  margin: 0;
+  color: #2c3e50;
+  font-size: 2rem; /* Larger heading */
+  font-weight: 600; /* Semi-bold */
+  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
 
 .kanban-columns {
@@ -24,6 +34,12 @@
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 20px;
     padding: 0 10px;
+}
+.header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .btn {

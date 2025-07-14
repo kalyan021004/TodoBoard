@@ -1,19 +1,21 @@
-// hooks/useSocketTasks.js - Fixed Version with Browser Notifications
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext'; // Import your auth context
 
 export const useSocketTasks = (initialTasks = []) => {
   const [tasks, setTasks] = useState(initialTasks);
   const [notifications, setNotifications] = useState([]);
-  const { socket } = useSocket();
+  const [activities, setActivities] = useState([]);
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  const { socket, isConnected, loadActivities: loadSocketActivities } = useSocket();
+  const { user } = useAuth(); // Get user from auth context
 
   // Request notification permission on mount
   useEffect(() => {
     requestNotificationPermission();
   }, []);
 
-  // Notification permission handler
-  const requestNotificationPermission = async () => {
+  const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
       console.log('This browser does not support notifications');
       return false;
@@ -35,50 +37,73 @@ export const useSocketTasks = (initialTasks = []) => {
       console.error('Error requesting notification permission:', error);
       return false;
     }
-  };
+  }, []);
 
-  // Show browser notification
-  const showBrowserNotification = async (title, body, icon = '/favicon.ico') => {
+  const showBrowserNotification = useCallback(async (title, options = {}) => {
     const hasPermission = await requestNotificationPermission();
     
     if (hasPermission) {
       try {
         const notification = new Notification(title, {
-          body,
-          icon,
-          tag: 'task-update',
-          requireInteraction: false,
-          silent: false
+          body: options.body || '',
+          icon: options.icon || '/favicon.ico',
+          tag: options.tag || 'task-update',
+          requireInteraction: options.persistent || false,
+          silent: options.silent || false,
+          data: options.data || {}
         });
 
-        // Auto close after 4 seconds
-        setTimeout(() => {
-          notification.close();
-        }, 4000);
+        if (!options.persistent) {
+          setTimeout(() => {
+            notification.close();
+          }, options.duration || 4000);
+        }
 
-        // Handle notification click
         notification.onclick = () => {
           window.focus();
-          notification.close();
+          if (options.onClick) {
+            options.onClick(notification.data);
+          }
+          if (!options.persistent) {
+            notification.close();
+          }
         };
 
-        return true;
+        return notification;
       } catch (error) {
         console.error('Error showing notification:', error);
         return false;
       }
     }
     return false;
-  };
+  }, [requestNotificationPermission]);
 
-  // Add debug logging for socket connection
+  const loadActivities = useCallback(async () => {
+    if (!socket || !isConnected) return;
+    
+    setIsLoadingActivities(true);
+    try {
+      socket.emit('request_activities');
+    } catch (error) {
+      console.error('Error loading activities:', error);
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  }, [socket, isConnected]);
+
+  useEffect(() => {
+    if (isConnected) {
+      loadActivities();
+    }
+  }, [isConnected, loadActivities]);
+
   useEffect(() => {
     console.log('useSocketTasks: Socket state:', {
       socket: !!socket,
-      connected: socket?.connected,
+      connected: isConnected,
       id: socket?.id
     });
-  }, [socket]);
+  }, [socket, isConnected]);
 
   useEffect(() => {
     if (!socket) {
@@ -88,13 +113,14 @@ export const useSocketTasks = (initialTasks = []) => {
 
     console.log('useSocketTasks: Setting up socket listeners');
 
-    // Task event handlers with enhanced logging and browser notifications
     const handleTaskCreated = (data) => {
       console.log('🔔 Socket event: task_created', data);
       setTasks(prev => [...prev, data.task]);
-      const message = `${data.createdBy} created a new task: ${data.task.title}`;
-      addNotification(message, 'success');
-      showBrowserNotification('New Task Created', message);
+      addNotification({
+        message: `${data.createdBy} created a new task: ${data.task.title}`,
+        type: 'success',
+        taskId: data.task._id
+      });
     };
 
     const handleTaskUpdated = (data) => {
@@ -102,17 +128,21 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      const message = `${data.updatedBy} updated task: ${data.task.title}`;
-      addNotification(message, 'info');
-      showBrowserNotification('Task Updated', message);
+      addNotification({
+        message: `${data.updatedBy} updated task: ${data.task.title}`,
+        type: 'info',
+        taskId: data.task._id
+      });
     };
 
     const handleTaskDeleted = (data) => {
       console.log('🔔 Socket event: task_deleted', data);
       setTasks(prev => prev.filter(task => task._id !== data.taskId));
-      const message = `${data.deletedBy} deleted a task`;
-      addNotification(message, 'warning');
-      showBrowserNotification('Task Deleted', message);
+      addNotification({
+        message: `${data.deletedBy} deleted a task`,
+        type: 'warning',
+        taskId: data.taskId
+      });
     };
 
     const handleTaskMoved = (data) => {
@@ -120,9 +150,11 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      const message = `${data.movedBy} moved task: ${data.task.title} to ${data.task.status}`;
-      addNotification(message, 'info');
-      showBrowserNotification('Task Moved', message);
+      addNotification({
+        message: `${data.movedBy} moved task to ${data.task.status}`,
+        type: 'info',
+        taskId: data.task._id
+      });
     };
 
     const handleTaskAssigned = (data) => {
@@ -130,9 +162,11 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      const message = `${data.assignedBy} assigned task: ${data.task.title}`;
-      addNotification(message, 'info');
-      showBrowserNotification('Task Assigned', message);
+      addNotification({
+        message: `${data.assignedBy} assigned task to ${data.task.assignedTo}`,
+        type: 'info',
+        taskId: data.task._id
+      });
     };
 
     const handleTaskAssignedToYou = (data) => {
@@ -140,130 +174,135 @@ export const useSocketTasks = (initialTasks = []) => {
       setTasks(prev => prev.map(task => 
         task._id === data.task._id ? data.task : task
       ));
-      const message = `You have been assigned to task: ${data.task.title}`;
-      addNotification(message, 'success');
-      showBrowserNotification('Task Assigned to You', message);
+      showBrowserNotification('Task Assigned to You', {
+        body: `You've been assigned to: ${data.task.title}`,
+        onClick: () => {
+          console.log('Notification clicked for task:', data.task._id);
+        },
+        data: { taskId: data.task._id }
+      });
     };
 
-    const handleTaskError = (data) => {
-      console.log('🔔 Socket event: task_error', data);
-      const message = `Error: ${data.message}`;
-      addNotification(message, 'error');
-      showBrowserNotification('Task Error', message);
+    const handleActivitiesLoaded = (loadedActivities) => {
+      console.log('📜 Activities loaded:', loadedActivities.length);
+      setActivities(loadedActivities);
     };
 
-    // Success handlers
-    const handleTaskCreatedSuccess = (data) => {
-      console.log('✅ Socket event: task_created_success', data);
+    const handleActivityCreated = (newActivity) => {
+      console.log('➕ New activity:', newActivity);
+      setActivities(prev => [newActivity, ...prev.slice(0, 49)]);
+      
+      // Use the user from auth context with proper null checks
+      if (newActivity.action === 'ASSIGN' && user && newActivity.details.assignedTo === user.id) {
+        showBrowserNotification('New Task Assignment', {
+          body: `You've been assigned to: ${newActivity.task?.title}`,
+          persistent: true
+        });
+      }
     };
 
-    const handleTaskUpdatedSuccess = (data) => {
-      console.log('✅ Socket event: task_updated_success', data);
-    };
-
-    const handleTaskDeletedSuccess = (data) => {
-      console.log('✅ Socket event: task_deleted_success', data);
-    };
-
-    const handleTaskMovedSuccess = (data) => {
-      console.log('✅ Socket event: task_moved_success', data);
-    };
-
-    const handleTaskAssignedSuccess = (data) => {
-      console.log('✅ Socket event: task_assigned_success', data);
-    };
-
-    // Register event listeners
     socket.on('task_created', handleTaskCreated);
     socket.on('task_updated', handleTaskUpdated);
     socket.on('task_deleted', handleTaskDeleted);
     socket.on('task_moved', handleTaskMoved);
     socket.on('task_assigned', handleTaskAssigned);
     socket.on('task_assigned_to_you', handleTaskAssignedToYou);
-    socket.on('task_error', handleTaskError);
-    socket.on('task_created_success', handleTaskCreatedSuccess);
-    socket.on('task_updated_success', handleTaskUpdatedSuccess);
-    socket.on('task_deleted_success', handleTaskDeletedSuccess);
-    socket.on('task_moved_success', handleTaskMovedSuccess);
-    socket.on('task_assigned_success', handleTaskAssignedSuccess);
+    socket.on('activities_loaded', handleActivitiesLoaded);
+    socket.on('activity_created', handleActivityCreated);
 
-    // Log all incoming events for debugging
-    const originalOnevent = socket.onevent;
-    socket.onevent = function(packet) {
-      console.log('📥 Socket received:', packet.data);
-      if (originalOnevent) {
-        originalOnevent.call(socket, packet);
-      }
-    };
-
-    console.log('useSocketTasks: All listeners registered');
-
-    // Cleanup
     return () => {
-      console.log('useSocketTasks: Cleaning up listeners');
       socket.off('task_created', handleTaskCreated);
       socket.off('task_updated', handleTaskUpdated);
       socket.off('task_deleted', handleTaskDeleted);
       socket.off('task_moved', handleTaskMoved);
       socket.off('task_assigned', handleTaskAssigned);
       socket.off('task_assigned_to_you', handleTaskAssignedToYou);
-      socket.off('task_error', handleTaskError);
-      socket.off('task_created_success', handleTaskCreatedSuccess);
-      socket.off('task_updated_success', handleTaskUpdatedSuccess);
-      socket.off('task_deleted_success', handleTaskDeletedSuccess);
-      socket.off('task_moved_success', handleTaskMovedSuccess);
-      socket.off('task_assigned_success', handleTaskAssignedSuccess);
+      socket.off('activities_loaded', handleActivitiesLoaded);
+      socket.off('activity_created', handleActivityCreated);
     };
+  }, [socket, showBrowserNotification, user]); // Add user to dependencies
+
+  const addNotification = useCallback(({ message, type, taskId }) => {
+    const id = Date.now();
+    const notification = { 
+      id, 
+      message, 
+      type, 
+      taskId,
+      timestamp: new Date(),
+      isRead: false 
+    };
+    
+    setNotifications(prev => [...prev, notification]);
+    
+    if (type !== 'error') {
+      setTimeout(() => {
+        removeNotification(id);
+      }, 5000);
+    }
+
+    if (type === 'success' || type === 'error') {
+      showBrowserNotification('Task Update', {
+        body: message,
+        data: { taskId }
+      });
+    }
+  }, [showBrowserNotification]);
+
+  const removeNotification = useCallback((id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
+  const markNotificationAsRead = useCallback((id) => {
+    setNotifications(prev => 
+      prev.map(n => n.id === id ? { ...n, isRead: true } : n)
+    );
+  }, []);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  const createTask = useCallback((taskData) => {
+    if (!socket) return;
+    socket.emit('create_task', taskData);
   }, [socket]);
 
-  const addNotification = (message, type) => {
-    console.log('📢 Adding notification:', { message, type });
-    const id = Date.now();
-    const notification = { id, message, type, timestamp: new Date() };
-    
-    setNotifications(prev => {
-      const newNotifications = [...prev, notification];
-      console.log('📢 Notifications updated:', newNotifications);
-      return newNotifications;
-    });
-    
-    // Auto remove notification after 5 seconds
-    setTimeout(() => {
-      console.log('📢 Auto-removing notification:', id);
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
-  };
+  const updateTask = useCallback((taskId, updates) => {
+    if (!socket) return;
+    socket.emit('update_task', { taskId, updates });
+  }, [socket]);
 
-  const removeNotification = (id) => {
-    console.log('📢 Removing notification:', id);
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  const deleteTask = useCallback((taskId) => {
+    if (!socket) return;
+    socket.emit('delete_task', { taskId });
+  }, [socket]);
 
-  const clearNotifications = () => {
-    console.log('📢 Clearing all notifications');
-    setNotifications([]);
-  };
+  const moveTask = useCallback((taskId, newStatus) => {
+    if (!socket) return;
+    socket.emit('move_task', { taskId, newStatus });
+  }, [socket]);
 
-  // Add a manual test function
-  const testNotification = () => {
-    console.log('🧪 Testing notification manually');
-    const message = 'This is a test notification!';
-    addNotification(message, 'success');
-    showBrowserNotification('Test Notification', message);
-  };
-
-  // Debug logging for state changes
-  useEffect(() => {
-    console.log('📊 Notifications state changed:', notifications);
-  }, [notifications]);
+  const assignTask = useCallback((taskId, assigneeId) => {
+    if (!socket) return;
+    socket.emit('assign_task', { taskId, assigneeId });
+  }, [socket]);
 
   return {
     tasks,
-    setTasks,
     notifications,
+    activities,
+    isLoadingActivities,
+    setTasks,
+    createTask,
+    updateTask,
+    deleteTask,
+    moveTask,
+    assignTask,
     removeNotification,
+    markNotificationAsRead,
     clearNotifications,
-    testNotification,
-    showBrowserNotification // Export for manual use
+    loadActivities,
+    showBrowserNotification
   };
 };

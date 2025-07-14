@@ -5,6 +5,7 @@ import TaskModal from './TaskModal';
 import FilterBar from './FilterBar';
 import NotificationContainer from './NotificationContainer';
 import OnlineUsers from './OnlineUsers';
+import ActivityLogPanel from './ActivityLogpanel';
 import { useTasks } from '../hooks/useTasks';
 import { useSocketTasks } from '../hooks/useSocketTasks';
 import { useSocketUsers } from '../hooks/useSocketUsers';
@@ -47,6 +48,7 @@ const KanbanBoard = () => {
     const [draggedOverUser, setDraggedOverUser] = useState(null);
     const [isTyping, setIsTyping] = useState(false);
     const [tasksInitialized, setTasksInitialized] = useState(false);
+    const [showActivityPanel, setShowActivityPanel] = useState(false);
 
     const [filters, setFilters] = useState({
         priority: 'all',
@@ -352,6 +354,11 @@ const KanbanBoard = () => {
         };
     };
 
+    // Toggle activity panel
+    const toggleActivityPanel = () => {
+        setShowActivityPanel(!showActivityPanel);
+    };
+
     // Don't render if tasks are not initialized
     if (loading || (!tasksInitialized && initialTasks.length === 0)) {
         return (
@@ -379,7 +386,7 @@ const KanbanBoard = () => {
     }
 
     return (
-        <div className="kanban-board">
+        <div className={`kanban-board ${showActivityPanel ? 'with-activity-panel' : ''}`}>
             {/* Notifications */}
             <NotificationContainer 
                 notifications={notifications}
@@ -395,6 +402,12 @@ const KanbanBoard = () => {
                         typingUsers={typingUsers}
                         allUsers={users}
                     />
+                    <button 
+                        className={`btn btn-secondary ${showActivityPanel ? 'active' : ''}`}
+                        onClick={toggleActivityPanel}
+                    >
+                        {showActivityPanel ? 'Hide Activity' : 'Show Activity'}
+                    </button>
                     <button className="btn btn-primary" onClick={() => handleCreateTask()}>
                         + Add New Task
                     </button>
@@ -408,40 +421,51 @@ const KanbanBoard = () => {
                 </div>
             </div>
 
-            <FilterBar
-                filters={filters}
-                setFilters={setFilters}
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-                sortOrder={sortOrder}
-                setSortOrder={setSortOrder}
-                users={users}
-                onTyping={handleTyping}
-                taskCounts={{
-                    total: activeTasks.length,
-                    todo: getTasksByStatus('todo').length,
-                    inProgress: getTasksByStatus('in-progress').length,
-                    done: getTasksByStatus('done').length
-                }}
-            />
-
-            <div className="kanban-columns">
-                {columns.map(column => (
-                    <KanbanColumn
-                        key={column.id}
-                        column={column}
-                        tasks={getTasksByStatus(column.status)}
-                        stats={getColumnStats(column.status)}
-                        onCreateTask={handleCreateTask}
-                        onEditTask={handleEditTask}
-                        onDeleteTask={handleDeleteTask}
-                        onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop}
-                        isDraggedOver={draggedTask && draggedTask.status !== column.status}
-                        typingUsers={typingUsers.filter(user => user.location === `column_${column.status}`)}
+            <div className="kanban-main-content">
+                <div className="kanban-board-section">
+                    <FilterBar
+                        filters={filters}
+                        setFilters={setFilters}
+                        sortBy={sortBy}
+                        setSortBy={setSortBy}
+                        sortOrder={sortOrder}
+                        setSortOrder={setSortOrder}
+                        users={users}
+                        onTyping={handleTyping}
+                        taskCounts={{
+                            total: activeTasks.length,
+                            todo: getTasksByStatus('todo').length,
+                            inProgress: getTasksByStatus('in-progress').length,
+                            done: getTasksByStatus('done').length
+                        }}
                     />
-                ))}
+
+                    <div className="kanban-columns">
+                        {columns.map(column => (
+                            <KanbanColumn
+                                key={column.id}
+                                column={column}
+                                tasks={getTasksByStatus(column.status)}
+                                stats={getColumnStats(column.status)}
+                                onCreateTask={handleCreateTask}
+                                onEditTask={handleEditTask}
+                                onDeleteTask={handleDeleteTask}
+                                onDragStart={handleDragStart}
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                                isDraggedOver={draggedTask && draggedTask.status !== column.status}
+                                typingUsers={typingUsers.filter(user => user.location === `column_${column.status}`)}
+                            />
+                        ))}
+                    </div>
+                </div>
+
+                {/* Activity Panel */}
+                {showActivityPanel && (
+                    <div className="activity-panel-container">
+                        <ActivityLogPanel />
+                    </div>
+                )}
             </div>
 
             {showModal && (

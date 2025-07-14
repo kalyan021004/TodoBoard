@@ -2,11 +2,19 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
 import dotenv from 'dotenv';
+import ActivityLog from '../models/activity.models.js';
 dotenv.config();
 
 let io;
 const onlineUsers = new Map();
 
+async function getLastActivities() {
+  return await ActivityLog.find()
+    .populate('user', 'username')
+    .populate('task', 'title')
+    .sort({ timestamp: -1 })
+    .limit(20);
+}
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -78,6 +86,10 @@ export const initializeSocket = (server) => {
           timestamp: new Date()
         });
       }
+    });
+    socket.on('request_activities', async () => {
+      const activities = await getLastActivities();
+      socket.emit('activities_loaded', activities);
     });
   });
 

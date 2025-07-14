@@ -1,0 +1,277 @@
+/* ActivityPanel.css */
+.activity-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  height: 100%;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  border: 1px solid #e1e5e9;
+  position: sticky;
+  top: 20px;
+}
+
+.activity-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f1f3f4;
+}
+
+.activity-panel-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.refresh-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #2980b9;
+  transform: translateY(-1px);
+}
+
+.refresh-button:disabled {
+  background: #95a5a6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.activity-loading,
+.activity-empty,
+.activity-disconnected {
+  text-align: center;
+  padding: 40px 20px;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+.activity-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.activity-loading::before {
+  content: '';
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e1e5e9;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.activity-empty {
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 2px dashed #d1d5db;
+}
+
+.activity-disconnected {
+  background: #fef2f2;
+  border-radius: 8px;
+  border: 2px solid #fecaca;
+  color: #dc2626;
+}
+
+.activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.activity-item {
+  padding: 16px;
+  border-bottom: 1px solid #f1f3f4;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.activity-item:hover {
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 0 -8px;
+  padding: 16px 24px;
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20px;
+  width: 8px;
+  height: 8px;
+  background: #3498db;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.activity-message {
+  font-size: 0.95rem;
+  color: #2c3e50;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  font-weight: 500;
+  padding-left: 20px;
+}
+
+.activity-time {
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  padding-left: 20px;
+}
+
+/* Kanban Board Layout Updates */
+.kanban-board.with-activity-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.kanban-main-content {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.kanban-board-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.activity-panel-container {
+  width: 350px;
+  flex-shrink: 0;
+  padding: 20px 20px 20px 0;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .activity-panel-container {
+    width: 300px;
+  }
+  
+  .activity-panel {
+    padding: 16px;
+  }
+  
+  .activity-message {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .kanban-main-content {
+    flex-direction: column;
+  }
+  
+  .activity-panel-container {
+    width: 100%;
+    padding: 0 20px 20px 20px;
+  }
+  
+  .activity-panel {
+    max-height: 300px;
+    position: static;
+  }
+  
+  .kanban-board.with-activity-panel {
+    height: auto;
+  }
+}
+
+/* Header Button Styles */
+.header-actions .btn.active {
+  background: #27ae60;
+  color: white;
+}
+
+.header-actions .btn.active:hover {
+  background: #219a52;
+}
+
+/* Scrollbar Styling */
+.activity-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activity-panel::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 6px;
+}
+
+.activity-panel::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 6px;
+}
+
+.activity-panel::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Dark theme support (optional) */
+@media (prefers-color-scheme: dark) {
+  .activity-panel {
+    background: #2c3e50;
+    border-color: #34495e;
+    color: #ecf0f1;
+  }
+  
+  .activity-panel-header {
+    border-bottom-color: #34495e;
+  }
+  
+  .activity-panel-header h3 {
+    color: #ecf0f1;
+  }
+  
+  .activity-item {
+    border-bottom-color: #34495e;
+  }
+  
+  .activity-item:hover {
+    background: #34495e;
+  }
+  
+  .activity-message {
+    color: #ecf0f1;
+  }
+  
+  .activity-time {
+    color: #bdc3c7;
+  }
+  
+  .activity-empty {
+    background: #34495e;
+    border-color: #4a5f7a;
+    color: #bdc3c7;
+  }
+}

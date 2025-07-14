@@ -6,7 +6,7 @@ import { generateToken } from '../utils/jwt.js';
 
 // Add CORS middleware specifically for these routes
 router.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://todo-board-1.vercel.app');
+  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -95,7 +95,7 @@ router.post('/login', async (req, res) => {
     const token = generateToken(user._id);
     
     // Explicitly set headers for login response
-    res.header('Access-Control-Allow-Origin', 'https://todo-board-1.vercel.app');
+    res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
     res.header('Access-Control-Allow-Credentials', 'true');
     res.json({
       success: true,

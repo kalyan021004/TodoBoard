@@ -17,6 +17,7 @@ export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const { user, token } = useAuth();
 
@@ -38,6 +39,7 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(true);
         setConnectionStatus('connected');
         newSocket.emit('get_online_users');
+        newSocket.emit('request_activities'); // Request activities on connect
       });
 
       newSocket.on('disconnect', () => {
@@ -84,6 +86,15 @@ export const SocketProvider = ({ children }) => {
         // Handle task deletion in your state
       });
 
+      // Activity Log events
+      newSocket.on('activities_loaded', (loadedActivities) => {
+        setActivities(loadedActivities);
+      });
+
+      newSocket.on('activity_created', (newActivity) => {
+        setActivities(prev => [newActivity, ...prev]); // Keep only last 20 activities
+      });
+
       // Cleanup
       return () => {
         newSocket.disconnect();
@@ -97,19 +108,28 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const loadActivities = () => {
+    if (socket && isConnected) {
+      socket.emit('request_activities');
+    }
+  };
+
   const value = {
     socket,
     isConnected,
     connectionStatus,
     onlineUsers,
     notifications,
+    activities,
     clearNotifications: () => setNotifications([]),
+    loadActivities,
     emitTaskCreated: (data) => emitEvent('task_created', data),
     emitTaskUpdated: (data) => emitEvent('task_updated', data),
     emitTaskDeleted: (data) => emitEvent('task_deleted', data),
     emitTaskMoved: (data) => emitEvent('task_moved', data),
     emitTaskAssigned: (data) => emitEvent('task_assigned', data),
-    emitUserTyping: (data) => emitEvent('user_typing', data)
+    emitUserTyping: (data) => emitEvent('user_typing', data),
+    emitActivityCreated: (data) => emitEvent('activity_created', data)
   };
 
   return (

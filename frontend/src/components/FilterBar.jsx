@@ -37,8 +37,7 @@ const FilterBar = ({
 
     return (
         <div className="filter-bar">
-            <div className="filter-section">
-                <div className="search-box">
+            <div className="search-box">
                     <input
                         type="text"
                         placeholder="Search tasks..."
@@ -48,6 +47,8 @@ const FilterBar = ({
                     />
                     <span className="search-icon">🔍</span>
                 </div>
+            <div className="filter-section">
+                
 
                 <div className="filter-group">
                     <label>Priority:</label>

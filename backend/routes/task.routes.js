@@ -4,8 +4,9 @@ import User from '../models/user.models.js';
 import { authenticate } from '../middleware/auth.js';
 import { validateTask } from '../middleware/taskValidation.js';
 import { getIO } from '../sockets/socket.js'; // Import the socket instance
-
+import { logActivity } from '../middleware/activityLog.js';
 const router = express.Router();
+
 
 router.get('/', authenticate, async (req, res) => {
     try {
@@ -75,21 +76,24 @@ router.post('/', authenticate, validateTask, async (req, res) => {
       });
     }
     
-    // Check for duplicate title (basic implementation without board)
-    const existingTask = await Task.findOne({ 
-      title: title.trim(),
-      board: null // For now, checking in default board
-    });
-    
-    if (existingTask) {
-      return res.status(400).json({
-        success: false,
-        message: 'Task with this title already exists'
+    // FIXED: More flexible duplicate check - only check if title is provided and not empty
+    if (title && title.trim()) {
+      const existingTask = await Task.findOne({ 
+        title: { $regex: new RegExp(`^${title.trim()}$`, 'i') }, // Case-insensitive exact match
+        // Remove board filter if you're not using boards, or make it dynamic
+        // board: null 
       });
+      
+      if (existingTask) {
+        return res.status(400).json({
+          success: false,
+          message: 'Task with this title already exists'
+        });
+      }
     }
     
     const task = new Task({
-      title: title.trim(),
+      title: title?.trim() || `Task ${Date.now()}`, // Fallback title if empty
       description: description?.trim(),
       assignedUser,
       status: status || 'todo',
@@ -98,7 +102,13 @@ router.post('/', authenticate, validateTask, async (req, res) => {
     });
     
     await task.save();
-    
+    await logActivity(req, 'CREATE', task._id, { title: task.title });
+
+    // FIXED: Check if req.io exists before using it
+    if (req.io) {
+      req.io.emit('activity_created', await getLastActivities());
+    }
+
     await task.populate('assignedUser', 'username email');
     await task.populate('createdBy', 'username email');
     
@@ -158,30 +168,43 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
       });
     }
     
-    // Check for duplicate title (excluding current task)
-    const existingTask = await Task.findOne({ 
-      title: title.trim(),
-      board: null,
-      _id: { $ne: req.params.id }
-    });
-    
-    if (existingTask) {
-      return res.status(400).json({
-        success: false,
-        message: 'Task with this title already exists'
+    // FIXED: Better duplicate check for updates
+    if (title && title.trim() && title.trim() !== oldTask.title) {
+      const existingTask = await Task.findOne({ 
+        title: { $regex: new RegExp(`^${title.trim()}$`, 'i') }, // Case-insensitive
+        _id: { $ne: req.params.id } // Exclude current task
+        // Remove board filter if not using boards
+        // board: null,
       });
+      
+      if (existingTask) {
+        return res.status(400).json({
+          success: false,
+          message: 'Task with this title already exists'
+        });
+      }
     }
     
     // Store old values for comparison
     const oldStatus = oldTask.status;
     const oldAssignedUser = oldTask.assignedUser?.toString();
     
-    // Update task
-    oldTask.title = title.trim();
-    oldTask.description = description?.trim();
-    oldTask.assignedUser = assignedUser;
-    oldTask.status = status || oldTask.status;
-    oldTask.priority = priority || oldTask.priority;
+    // Update task - only update fields that are provided
+    if (title && title.trim()) {
+      oldTask.title = title.trim();
+    }
+    if (description !== undefined) {
+      oldTask.description = description?.trim();
+    }
+    if (assignedUser) {
+      oldTask.assignedUser = assignedUser;
+    }
+    if (status) {
+      oldTask.status = status;
+    }
+    if (priority) {
+      oldTask.priority = priority;
+    }
     
     await oldTask.save();
     
@@ -257,14 +280,16 @@ router.delete('/:id', authenticate, async (req, res) => {
         message: 'Task not found'
       });
     }
+
+   
     
     await Task.findByIdAndDelete(req.params.id);
     
-    // 🎉 EMIT SOCKET EVENT FOR TASK DELETION
+    // EMIT SOCKET EVENT FOR TASK DELETION
     const io = getIO();
     if (io) {
       io.emit('task_deleted', {
-        task: task,
+        taskId: req.params.id,  // Include task ID
         deletedBy: req.user.username,
         timestamp: new Date()
       });
@@ -272,6 +297,7 @@ router.delete('/:id', authenticate, async (req, res) => {
     
     res.json({
       success: true,
+      data: { id: req.params.id },  // Return deleted task ID
       message: 'Task deleted successfully'
     });
   } catch (error) {
@@ -282,6 +308,8 @@ router.delete('/:id', authenticate, async (req, res) => {
     });
   }
 });
+
+
 
 router.get('/user/:userId', authenticate, async (req, res) => {
   try {
