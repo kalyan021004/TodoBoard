@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { initializeSocket } from './sockets/socket.js';
+import checkDiskSpace from 'check-disk-space';
 
 import authRoutes from './routes/auth.routes.js';
 import taskRoutes from './routes/task.routes.js';
@@ -29,7 +30,7 @@ initializeSocket(server);
 if (isProduction) {
   app.use(helmet());
   app.use(compression());
-  
+
   // Rate limiting
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -63,16 +64,26 @@ app.use(express.static(path.join(__dirname, 'client/build')));
 // Database connection with enhanced options for production
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI, {
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000
     });
-    console.log('✅ MongoDB connected successfully');
+
+    console.log(`✅ MongoDB connected: ${conn.connection.host}`);
+
+    // Verify the connection
+    await mongoose.connection.db.admin().ping();
+    console.log('🗄️ Database ping successful');
+
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    console.error('❌ MongoDB connection failed:', {
+      error: error.message,
+      stack: error.stack,
+      env: process.env.MONGODB_URI ? 'URI exists' : 'URI missing!'
+    });
     process.exit(1);
   }
 };
@@ -82,24 +93,42 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/users', userRoutes);
 
-// Health check endpoint with more robust checks
-app.get('/', (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  const memoryUsage = process.memoryUsage();
-  
-  res.json({ 
-    status: dbStatus === 'connected' ? 'OK' : 'WARNING',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    database: dbStatus,
-    uptime: process.uptime(),
-    memoryUsage: {
-      rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
-      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-      heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-    },
-    onlineUsers: getOnlineUsersCount()
-  });
+// Health check endpoints
+app.get('/', async (req, res) => {
+  try {
+    const diskInfo = await checkDiskSpace('C:');
+
+    const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    const memoryUsage = process.memoryUsage();
+
+    res.json({
+      status: 'Server is running',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      database: dbStatus,
+      diskUsage: {
+        free: `${(diskInfo.free / 1024 / 1024).toFixed(2)} MB`,
+        total: `${(diskInfo.size / 1024 / 1024).toFixed(2)} MB`,
+        used: `${((diskInfo.size - diskInfo.free) / 1024 / 1024).toFixed(2)} MB`
+      },
+      memoryUsage: {
+        rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
+        heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+        heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+      },
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Could not complete health check',
+      error: error.message
+    });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK' });
 });
 
 // Serve React app - must be after API routes
@@ -107,19 +136,34 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
 });
 
-// Enhanced error handling
+// Enhanced error handler
 app.use((err, req, res, next) => {
-  console.error('🚨 Error:', err.stack);
-  
+  console.error('🚨 Detailed Error:', {
+    message: err.message,
+    stack: err.stack,
+    code: err.code,
+    statusCode: err.statusCode,
+    isOperational: err.isOperational,
+    request: {
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      body: req.body
+    }
+  });
+
   const statusCode = err.statusCode || 500;
   const message = isProduction && !err.isOperational
     ? 'Something went wrong!'
     : err.message;
-  
+
   res.status(statusCode).json({
     success: false,
     message,
-    ...(!isProduction && { stack: err.stack })
+    ...(!isProduction && { 
+      stack: err.stack,
+      details: err.details 
+    })
   });
 });
 
@@ -131,7 +175,12 @@ app.use('*', (req, res) => {
   });
 });
 
-// Handle unhandled rejections
+// Server error handling
+server.on('error', (error) => {
+  console.error('Server error:', error);
+});
+
+// Process error handling
 process.on('unhandledRejection', (err) => {
   console.error('UNHANDLED REJECTION! 💥 Shutting down...');
   console.error(err.name, err.message);
@@ -142,7 +191,6 @@ process.on('unhandledRejection', (err) => {
   }
 });
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
   console.error(err.name, err.message);
@@ -153,16 +201,25 @@ process.on('uncaughtException', (err) => {
   }
 });
 
+// Memory monitoring
+setInterval(() => {
+  const used = process.memoryUsage().heapUsed / 1024 / 1024;
+  console.log(`Memory usage: ${Math.round(used * 100) / 100} MB`);
+}, 10000);
+
+// Start server
 const startServer = async () => {
-  await connectDB();
-  server.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  });
+  try {
+    await connectDB();
+
+    server.listen(PORT, () => {
+      console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    });
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
 };
 
 startServer();
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  server.close(() => process.exit(1));
-});
