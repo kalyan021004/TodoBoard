@@ -6,11 +6,14 @@ import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './pages/Dashboard';
+import { ToastProvider } from './context/ToastContext';
 
 function App() {
   return (
     <AuthProvider>
-      <SocketProvider> {/* Add SocketProvider here */}
+      <SocketProvider>
+            <ToastProvider>
+ {/* Add SocketProvider here */}
         <Router>
           <div className="App">
             <Routes>
@@ -25,6 +28,8 @@ function App() {
             </Routes>
           </div>
         </Router>
+            </ToastProvider>
+
       </SocketProvider> {/* Close SocketProvider here */}
     </AuthProvider>
   );

@@ -28,7 +28,6 @@ const emitToAll = (event, data) => {
   const io = getIO();
   if (io) {
     io.emit(event, data);
-    console.log(`[Socket] Emitted ${event}`, data); // Debug log
   }
 };
 
@@ -36,20 +35,44 @@ const emitToUser = (userId, event, data) => {
   const io = getIO();
   if (io) {
     io.to(`user_${userId}`).emit(event, data);
-    console.log(`[Socket] Emitted ${event} to user_${userId}`, data);
   }
 };
 
-// Helper function to update user task counts
 const updateUserTaskCount = async (userId, increment) => {
   if (!userId) return;
   
   try {
+    // Always recalculate from actual database for accuracy
+    const actualTaskCount = await Task.countDocuments({ 
+      assignedUser: userId,
+      status: { $in: ['todo', 'in-progress', 'review'] }
+    });
+    
     await User.findByIdAndUpdate(userId, { 
-      $inc: { activeTaskCount: increment ? 1 : -1 } 
+      activeTaskCount: actualTaskCount
     });
   } catch (error) {
     console.error('Error updating user task count:', error);
+  }
+};
+
+const recalculateUserTaskCount = async (userId) => {
+  if (!userId) return;
+  
+  try {
+    const actualTaskCount = await Task.countDocuments({ 
+      assignedUser: userId,
+      status: { $in: ['todo', 'in-progress', 'review'] }
+    });
+    
+    await User.findByIdAndUpdate(userId, { 
+      activeTaskCount: actualTaskCount
+    });
+    
+    return actualTaskCount;
+  } catch (error) {
+    console.error('Error recalculating user task count:', error);
+    return 0;
   }
 };
 
@@ -436,6 +459,96 @@ router.get('/smart-assignee', authenticate, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while finding optimal assignee',
+      error: error.message
+    });
+  }
+});
+
+router.patch('/:id/smart-assign', authenticate, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Task not found' 
+      });
+    }
+
+    // Recalculate ALL user task counts for accuracy
+    const allUsers = await User.find({}).select('_id username activeTaskCount');
+    
+    for (const user of allUsers) {
+      await recalculateUserTaskCount(user._id);
+    }
+    
+    // Now get fresh user data with correct counts
+    const usersWithCorrectCounts = await User.find({})
+      .select('_id username activeTaskCount')
+      .sort({ activeTaskCount: 1 });
+
+    const optimalUser = usersWithCorrectCounts[0];
+
+    if (!optimalUser) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'No available users for assignment' 
+      });
+    }
+
+    // Check if task is already assigned to the optimal user
+    if (task.assignedUser?.toString() === optimalUser._id.toString()) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Task is already assigned to the user with the fewest tasks' 
+      });
+    }
+
+    // Store the previous assignee BEFORE changing it
+    const previousAssigneeId = task.assignedUser?.toString();
+    
+    // Assign task
+    task.assignedUser = optimalUser._id;
+    await task.save();
+    
+    // Recalculate counts for affected users
+    if (previousAssigneeId) {
+      await recalculateUserTaskCount(previousAssigneeId);
+    }
+    await recalculateUserTaskCount(optimalUser._id);
+
+    const populatedTask = await populateTask(task);
+
+    // Log activity
+    const activity = await logActivity(req, 'SMART_ASSIGN', task._id, {
+      assignedTo: optimalUser.username,
+      previousAssignee: previousAssigneeId
+    });
+
+    // Emit socket events
+    emitToAll('activity_created', activity);
+    emitToAll('task_updated', {
+      task: populatedTask,
+      updatedBy: req.user.username,
+      timestamp: new Date()
+    });
+
+    emitToUser(optimalUser._id, 'task_assigned_to_you', {
+      task: populatedTask,
+      assignedBy: req.user.username,
+      timestamp: new Date()
+    });
+
+    res.json({
+      success: true,
+      data: populatedTask,
+      message: `Task smart assigned to ${optimalUser.username}`
+    });
+
+  } catch (error) {
+    console.error('Smart assign error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during smart assignment',
       error: error.message
     });
   }

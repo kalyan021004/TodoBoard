@@ -285,6 +285,24 @@ const KanbanBoard = () => {
         }
     };
 
+    // Smart Assign handler - NEW FUNCTION
+    const handleTaskUpdate = useCallback((updatedTask) => {
+        // Update local state immediately
+        setTasks(prevTasks => 
+            prevTasks.map(task => 
+                task._id === updatedTask._id ? updatedTask : task
+            )
+        );
+
+        // Emit socket event for real-time updates to other users
+        if (socket) {
+            socket.emit('task_smart_assigned', {
+                task: updatedTask,
+                assignedTo: updatedTask.assignedUser
+            });
+        }
+    }, [setTasks, socket]);
+
     // Drag and drop functionality with immediate updates
     const handleDragStart = (e, task) => {
         const completeTask = activeTasks.find(t => t._id === task._id) || task;
@@ -374,6 +392,26 @@ const KanbanBoard = () => {
     const toggleActivityPanel = () => {
         setShowActivityPanel(!showActivityPanel);
     };
+
+    // Socket event listener for smart assign updates from other users
+    useEffect(() => {
+        if (socket) {
+            const handleSmartAssignUpdate = (data) => {
+                // Update the task in local state when someone else smart assigns
+                setTasks(prevTasks => 
+                    prevTasks.map(task => 
+                        task._id === data.task._id ? data.task : task
+                    )
+                );
+            };
+
+            socket.on('task_smart_assigned', handleSmartAssignUpdate);
+
+            return () => {
+                socket.off('task_smart_assigned', handleSmartAssignUpdate);
+            };
+        }
+    }, [socket, setTasks]);
 
     if (loading && activeTasks.length === 0) {
         return (
@@ -470,6 +508,7 @@ const KanbanBoard = () => {
                                 onCreateTask={handleCreateTask}
                                 onEditTask={handleEditTask}
                                 onDeleteTask={handleDeleteTask}
+                                onTaskUpdate={handleTaskUpdate}
                                 onDragStart={handleDragStart}
                                 onDragOver={handleDragOver}
                                 onDrop={handleDrop}
