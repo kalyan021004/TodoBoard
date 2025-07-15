@@ -18,7 +18,7 @@ async function getLastActivities() {
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: ['https://todo-board-1.vercel.app'],
+      origin: ['https://todo-board-1.vercel.app','https://todoboard-1-nvnk.onrender.com'],
       credentials: true,
       methods: ['GET', 'POST']
     },

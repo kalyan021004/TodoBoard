@@ -21,7 +21,7 @@ const server = createServer(app);
 
 // Enhanced CORS configuration
 const corsOptions = {
-  origin: ['https://todo-board-1.vercel.app'],
+  origin: ['https://todo-board-1.vercel.app','https://todoboard-1-nvnk.onrender.com'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
