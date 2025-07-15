@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import KanbanColumn from './KanbanColumn';
 import TaskModal from './TaskModal';
@@ -10,8 +10,6 @@ import { useTasks } from '../hooks/useTasks';
 import { useSocketTasks } from '../hooks/useSocketTasks';
 import { useSocketUsers } from '../hooks/useSocketUsers';
 import { useSocket } from '../context/SocketContext';
-import SocketDebugPanel from './SocketDebugPanel';
-
 import '../styles/KanbanBoard.css';
 
 const KanbanBoard = () => {
@@ -37,7 +35,8 @@ const KanbanBoard = () => {
         notifications, 
         removeNotification, 
         clearNotifications,
-        testNotification
+        testNotification,
+        refreshTasks
     } = useSocketTasks(initialTasks);
 
     const { onlineUsers, typingUsers } = useSocketUsers();
@@ -49,6 +48,7 @@ const KanbanBoard = () => {
     const [isTyping, setIsTyping] = useState(false);
     const [tasksInitialized, setTasksInitialized] = useState(false);
     const [showActivityPanel, setShowActivityPanel] = useState(false);
+    const [lastRefresh, setLastRefresh] = useState(new Date());
 
     const [filters, setFilters] = useState({
         priority: 'all',
@@ -59,38 +59,30 @@ const KanbanBoard = () => {
     const [sortBy, setSortBy] = useState('createdAt');
     const [sortOrder, setSortOrder] = useState('desc');
 
-    // AUTO-REQUEST NOTIFICATION PERMISSION ON COMPONENT MOUNT
+    // Notification setup
     useEffect(() => {
         const setupNotifications = async () => {
             if ('Notification' in window && Notification.permission === 'default') {
                 try {
-                    const permission = await Notification.requestPermission();
-                    console.log('Notification permission:', permission);
+                    await Notification.requestPermission();
                 } catch (error) {
                     console.error('Error requesting notification permission:', error);
                 }
             }
-
-            // Log debugging info
-            console.log('Notification setup:', {
-                supported: 'Notification' in window,
-                permission: Notification?.permission,
-                isHttps: window.location.protocol === 'https:',
-                origin: window.location.origin
-            });
         };
-
         setupNotifications();
     }, []);
 
-    // Better task selection logic
+    // Combined refresh function
+    const handleRefresh = useCallback(() => {
+        fetchTasks();
+        refreshTasks();
+        setLastRefresh(new Date());
+    }, [fetchTasks, refreshTasks]);
+
+    // Task management
     const activeTasks = useMemo(() => {
-        // If we have socket tasks and they're properly initialized, use them
-        if (socketTasks.length > 0 && tasksInitialized) {
-            return socketTasks;
-        }
-        // Otherwise use initial tasks
-        return initialTasks;
+        return socketTasks.length > 0 && tasksInitialized ? socketTasks : initialTasks;
     }, [socketTasks, initialTasks, tasksInitialized]);
 
     useEffect(() => {
@@ -103,24 +95,34 @@ const KanbanBoard = () => {
         }
     }, [showModal, users.length, fetchUsers]);
 
-    // Better initialization logic
+    // Initialize tasks
     useEffect(() => {
         if (initialTasks.length > 0) {
-            // Always update socket tasks when initial tasks change
             setTasks(initialTasks);
             setTasksInitialized(true);
         }
     }, [initialTasks, setTasks]);
 
-    // Ensure socket tasks are set when they become available
+    // Auto-refresh on error
     useEffect(() => {
-        if (socketTasks.length > 0 && !tasksInitialized) {
-            setTasksInitialized(true);
+        if (error) {
+            const timer = setTimeout(() => {
+                handleRefresh();
+            }, 5000);
+            return () => clearTimeout(timer);
         }
-    }, [socketTasks.length, tasksInitialized]);
+    }, [error, handleRefresh]);
 
-    // Handle typing indicator
-    const handleTyping = (isTypingNow) => {
+    // Periodic refresh
+    useEffect(() => {
+        const interval = setInterval(() => {
+            handleRefresh();
+        }, 300000);
+        return () => clearInterval(interval);
+    }, [handleRefresh]);
+
+    // Typing indicator
+    const handleTyping = useCallback((isTypingNow) => {
         if (socket && isTypingNow !== isTyping) {
             setIsTyping(isTypingNow);
             socket.emit('user_typing', { 
@@ -128,7 +130,7 @@ const KanbanBoard = () => {
                 location: 'kanban_board'
             });
         }
-    };
+    }, [socket, isTyping]);
 
     const columns = [
         { id: 'todo', title: 'To Do', status: 'todo' },
@@ -136,22 +138,16 @@ const KanbanBoard = () => {
         { id: 'done', title: 'Done', status: 'done' }
     ];
 
-    // Logout function
     const handleLogout = () => {
-        // Clear any stored authentication data
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
-        
-        // Navigate to login page using React Router
         navigate('/login', { replace: true });
     };
-    
+
     const getTasksByStatus = (status) => {
-        if (!activeTasks || !Array.isArray(activeTasks)) {
-            return [];
-        }
+        if (!activeTasks || !Array.isArray(activeTasks)) return [];
 
         let filteredTasks = activeTasks.filter(task => task.status === status);
 
@@ -205,6 +201,7 @@ const KanbanBoard = () => {
         return filteredTasks;
     };
 
+    // Task CRUD operations
     const handleCreateTask = (status = 'todo') => {
         setEditingTask({ status });
         setShowModal(true);
@@ -226,11 +223,9 @@ const KanbanBoard = () => {
         try {
             if (editingTask._id) {
                 await updateTask(editingTask._id, taskData);
-                // Socket will handle the update via useSocketTasks
             } else {
                 const status = editingTask.status || 'todo';
                 await createTask({ ...taskData, status });
-                // Socket will handle the creation via useSocketTasks
             }
             handleCloseModal();
         } catch (error) {
@@ -242,24 +237,18 @@ const KanbanBoard = () => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             try {
                 await deleteTask(taskId);
-                // Socket will handle the deletion via useSocketTasks
             } catch (error) {
                 console.error('Error deleting task:', error);
             }
         }
     };
 
+    // Drag and drop functionality
     const handleDragStart = (e, task) => {
-        console.log('Drag started:', task);
-        // Ensure we have the complete task object
         const completeTask = activeTasks.find(t => t._id === task._id) || task;
         setDraggedTask(completeTask);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', task._id);
-        e.target.classList.add('card-flipping');
-        setTimeout(() => {
-            e.target.classList.remove('card-flipping');
-        }, 300);
     };
 
     const handleDragOver = (e) => {
@@ -270,64 +259,22 @@ const KanbanBoard = () => {
     const handleDrop = async (e, newStatus, newAssignedUser = null) => {
         e.preventDefault();
         
-        console.log('Drop event:', {
-            draggedTask,
-            newStatus,
-            newAssignedUser,
-            originalStatus: draggedTask?.status,
-            activeTasks: activeTasks.length
-        });
-
-        if (!draggedTask || !draggedTask._id) {
-            console.log('No valid dragged task found');
-            return;
-        }
+        if (!draggedTask || !draggedTask._id) return;
 
         try {
             const currentUserId = draggedTask.assignedUser?._id || draggedTask.assignedUser;
             const statusChanged = draggedTask.status !== newStatus;
             const userChanged = newAssignedUser && newAssignedUser !== currentUserId;
 
-            console.log('Change detection:', {
-                statusChanged,
-                userChanged,
-                currentUserId,
-                newAssignedUser
-            });
-
             if (statusChanged) {
                 const tasksInNewStatus = getTasksByStatus(newStatus);
                 const newPosition = tasksInNewStatus.length;
-                
-                console.log('Using updateTaskPosition:', {
-                    taskId: draggedTask._id,
-                    newStatus,
-                    newPosition
-                });
-
                 await updateTaskPosition(draggedTask._id, newStatus, newPosition);
-                console.log('Task position updated successfully');
             } else if (userChanged) {
-                const updateData = {
-                    assignedUser: newAssignedUser
-                };
-
-                console.log('Updating assigned user:', {
-                    taskId: draggedTask._id,
-                    updateData
-                });
-
-                await updateTask(draggedTask._id, updateData);
-                console.log('Task assigned user updated successfully');
-            } else {
-                console.log('No changes detected, skipping update');
+                await updateTask(draggedTask._id, { assignedUser: newAssignedUser });
             }
         } catch (error) {
             console.error('Error updating task:', error);
-            if (error.response) {
-                console.error('Response data:', error.response.data);
-                console.error('Response status:', error.response.status);
-            }
         }
 
         setDraggedTask(null);
@@ -354,18 +301,16 @@ const KanbanBoard = () => {
         };
     };
 
-    // Toggle activity panel
     const toggleActivityPanel = () => {
         setShowActivityPanel(!showActivityPanel);
     };
 
-    // Don't render if tasks are not initialized
     if (loading || (!tasksInitialized && initialTasks.length === 0)) {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
                 <p>Loading your tasks...</p>
-                <button className="btn btn-secondary" onClick={fetchTasks}>
+                <button className="btn btn-secondary" onClick={handleRefresh}>
                     Retry
                 </button>
             </div>
@@ -378,7 +323,7 @@ const KanbanBoard = () => {
                 <div className="error-icon">⚠️</div>
                 <h3>Oops! Something went wrong</h3>
                 <p>{error}</p>
-                <button className="btn btn-primary" onClick={fetchTasks}>
+                <button className="btn btn-primary" onClick={handleRefresh}>
                     Try Again
                 </button>
             </div>
@@ -387,7 +332,6 @@ const KanbanBoard = () => {
 
     return (
         <div className={`kanban-board ${showActivityPanel ? 'with-activity-panel' : ''}`}>
-            {/* Notifications */}
             <NotificationContainer 
                 notifications={notifications}
                 onRemove={removeNotification}
@@ -408,10 +352,16 @@ const KanbanBoard = () => {
                     >
                         {showActivityPanel ? 'Hide Activity' : 'Show Activity'}
                     </button>
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={handleRefresh}
+                        title={`Last refreshed: ${lastRefresh.toLocaleTimeString()}`}
+                    >
+                        <i className="refresh-icon">⟳</i> Refresh
+                    </button>
                     <button className="btn btn-primary" onClick={() => handleCreateTask()}>
                         + Add New Task
                     </button>
-                    {/* ADD TEST NOTIFICATION BUTTON FOR DEBUGGING */}
                     <button className="btn btn-secondary" onClick={testNotification}>
                         Test Notification
                     </button>
@@ -460,7 +410,6 @@ const KanbanBoard = () => {
                     </div>
                 </div>
 
-                {/* Activity Panel */}
                 {showActivityPanel && (
                     <div className="activity-panel-container">
                         <ActivityLogPanel />

@@ -1,17 +1,18 @@
+// activity.models.js
 import mongoose from 'mongoose';
 
 const activityLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'ASSIGN', 'MOVE', 'LOGIN', 'LOGOUT']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'MOVE', 'ASSIGN']
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  task: {
+  task: {  // Using 'task' instead of 'entityId'
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Task'
   },
@@ -23,11 +24,6 @@ const activityLogSchema = new mongoose.Schema({
     default: Date.now
   }
 });
-
-// Indexes for better performance
-activityLogSchema.index({ user: 1 });
-activityLogSchema.index({ task: 1 });
-activityLogSchema.index({ timestamp: -1 });
 
 const ActivityLog = mongoose.model('ActivityLog', activityLogSchema);
 

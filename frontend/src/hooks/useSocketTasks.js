@@ -1,14 +1,53 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { useAuth } from '../context/AuthContext'; // Import your auth context
+import { useAuth } from '../context/AuthContext';
 
 export const useSocketTasks = (initialTasks = []) => {
   const [tasks, setTasks] = useState(initialTasks);
   const [notifications, setNotifications] = useState([]);
   const [activities, setActivities] = useState([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true); // Add loading state for tasks
   const { socket, isConnected, loadActivities: loadSocketActivities } = useSocket();
-  const { user } = useAuth(); // Get user from auth context
+  const { user, token } = useAuth();
+
+  // ✅ ADD THIS: Fetch initial tasks from API
+  const fetchInitialTasks = useCallback(async () => {
+    if (!token) return;
+    
+    setIsLoadingTasks(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/tasks`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          console.log('📥 Initial tasks loaded:', data.data.length);
+          setTasks(data.data);
+        } else {
+          console.error('Failed to fetch tasks:', data.message);
+        }
+      } else {
+        console.error('HTTP error:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching initial tasks:', error);
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  }, [token]);
+
+  // ✅ ADD THIS: Fetch tasks on mount and when user/token changes
+  useEffect(() => {
+    if (user && token) {
+      fetchInitialTasks();
+    }
+  }, [user, token, fetchInitialTasks]);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -192,7 +231,6 @@ export const useSocketTasks = (initialTasks = []) => {
       console.log('➕ New activity:', newActivity);
       setActivities(prev => [newActivity, ...prev.slice(0, 49)]);
       
-      // Use the user from auth context with proper null checks
       if (newActivity.action === 'ASSIGN' && user && newActivity.details.assignedTo === user.id) {
         showBrowserNotification('New Task Assignment', {
           body: `You've been assigned to: ${newActivity.task?.title}`,
@@ -220,7 +258,7 @@ export const useSocketTasks = (initialTasks = []) => {
       socket.off('activities_loaded', handleActivitiesLoaded);
       socket.off('activity_created', handleActivityCreated);
     };
-  }, [socket, showBrowserNotification, user]); // Add user to dependencies
+  }, [socket, showBrowserNotification, user]);
 
   const addNotification = useCallback(({ message, type, taskId }) => {
     const id = Date.now();
@@ -288,11 +326,17 @@ export const useSocketTasks = (initialTasks = []) => {
     socket.emit('assign_task', { taskId, assigneeId });
   }, [socket]);
 
+  // ✅ ADD THIS: Refresh tasks function
+  const refreshTasks = useCallback(() => {
+    fetchInitialTasks();
+  }, [fetchInitialTasks]);
+
   return {
     tasks,
     notifications,
     activities,
     isLoadingActivities,
+    isLoadingTasks, // ✅ ADD THIS: Export loading state
     setTasks,
     createTask,
     updateTask,
@@ -303,6 +347,7 @@ export const useSocketTasks = (initialTasks = []) => {
     markNotificationAsRead,
     clearNotifications,
     loadActivities,
-    showBrowserNotification
+    showBrowserNotification,
+    refreshTasks // ✅ ADD THIS: Export refresh function
   };
 };

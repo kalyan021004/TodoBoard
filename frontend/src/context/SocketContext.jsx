@@ -18,6 +18,7 @@ export const SocketProvider = ({ children }) => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const { user, token } = useAuth();
 
@@ -39,7 +40,7 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(true);
         setConnectionStatus('connected');
         newSocket.emit('get_online_users');
-        newSocket.emit('request_activities'); // Request activities on connect
+        newSocket.emit('request_activities');
       });
 
       newSocket.on('disconnect', () => {
@@ -74,16 +75,30 @@ export const SocketProvider = ({ children }) => {
       });
 
       // Task events
-      newSocket.on('task_created', (task) => {
-        // Handle task creation in your state
+      newSocket.on('task_created', (data) => {
+        setTasks(prev => [...prev, data.task]);
       });
 
-      newSocket.on('task_updated', (task) => {
-        // Handle task update in your state
+      newSocket.on('task_updated', (data) => {
+        setTasks(prev => prev.map(task => 
+          task._id === data.task._id ? data.task : task
+        ));
       });
 
-      newSocket.on('task_deleted', (taskId) => {
-        // Handle task deletion in your state
+      newSocket.on('task_deleted', (data) => {
+        setTasks(prev => prev.filter(task => task._id !== data.taskId));
+      });
+
+      newSocket.on('task_moved', (data) => {
+        setTasks(prev => prev.map(task => 
+          task._id === data.task._id ? data.task : task
+        ));
+      });
+
+      newSocket.on('task_assigned', (data) => {
+        setTasks(prev => prev.map(task => 
+          task._id === data.task._id ? data.task : task
+        ));
       });
 
       // Activity Log events
@@ -92,7 +107,7 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('activity_created', (newActivity) => {
-        setActivities(prev => [newActivity, ...prev]); // Keep only last 20 activities
+        setActivities(prev => [newActivity, ...prev.slice(0, 19)]);
       });
 
       // Cleanup
@@ -121,6 +136,8 @@ export const SocketProvider = ({ children }) => {
     onlineUsers,
     notifications,
     activities,
+    tasks,
+    setTasks,
     clearNotifications: () => setNotifications([]),
     loadActivities,
     emitTaskCreated: (data) => emitEvent('task_created', data),
