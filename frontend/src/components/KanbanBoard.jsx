@@ -15,20 +15,22 @@ import '../styles/KanbanBoard.css';
 const KanbanBoard = () => {
     const navigate = useNavigate();
     const { socket } = useSocket();
+    
+    // First fetch tasks via REST API
     const {
         tasks: initialTasks,
         loading,
         error,
         fetchTasks,
         fetchUsers,
-        createTask,
-        updateTask,
-        deleteTask,
+        createTask: createTaskRest,
+        updateTask: updateTaskRest,
+        deleteTask: deleteTaskRest,
         updateTaskPosition,
         users
     } = useTasks();
 
-    // Socket integration
+    // Then use socket for real-time updates
     const { 
         tasks: socketTasks, 
         setTasks, 
@@ -36,7 +38,11 @@ const KanbanBoard = () => {
         removeNotification, 
         clearNotifications,
         testNotification,
-        refreshTasks
+        createTask: createTaskSocket,
+        updateTask: updateTaskSocket,
+        deleteTask: deleteTaskSocket,
+        moveTask: moveTaskSocket,
+        assignTask: assignTaskSocket
     } = useSocketTasks(initialTasks);
 
     const { onlineUsers, typingUsers } = useSocketUsers();
@@ -46,7 +52,6 @@ const KanbanBoard = () => {
     const [draggedTask, setDraggedTask] = useState(null);
     const [draggedOverUser, setDraggedOverUser] = useState(null);
     const [isTyping, setIsTyping] = useState(false);
-    const [tasksInitialized, setTasksInitialized] = useState(false);
     const [showActivityPanel, setShowActivityPanel] = useState(false);
     const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -73,19 +78,32 @@ const KanbanBoard = () => {
         setupNotifications();
     }, []);
 
-    // Combined refresh function
-    const handleRefresh = useCallback(() => {
-        fetchTasks();
-        refreshTasks();
-        setLastRefresh(new Date());
-    }, [fetchTasks, refreshTasks]);
-
-    // Task management
-    const activeTasks = useMemo(() => {
-        return socketTasks.length > 0 && tasksInitialized ? socketTasks : initialTasks;
-    }, [socketTasks, initialTasks, tasksInitialized]);
-
+    // FIXED: Better sync logic between REST and Socket tasks
     useEffect(() => {
+        if (initialTasks.length > 0) {
+            console.log('🔄 Syncing initial tasks with socket state');
+            // Only update socket tasks if they're empty or significantly different
+            if (socketTasks.length === 0 || 
+                JSON.stringify(initialTasks.map(t => t._id).sort()) !== 
+                JSON.stringify(socketTasks.map(t => t._id).sort())) {
+                setTasks(initialTasks);
+            }
+        }
+    }, [initialTasks, setTasks, socketTasks]);
+
+    // Use socketTasks as the primary source of truth, with fallback to initialTasks
+    const activeTasks = useMemo(() => {
+        // Always prefer socket tasks when available and populated
+        if (socketTasks.length > 0) {
+            return socketTasks;
+        }
+        // Fallback to initial tasks
+        return initialTasks;
+    }, [socketTasks, initialTasks]);
+
+    // Initial data fetch
+    useEffect(() => {
+        console.log('🚀 Initial data fetch triggered');
         fetchTasks();
     }, [fetchTasks]);
 
@@ -95,17 +113,29 @@ const KanbanBoard = () => {
         }
     }, [showModal, users.length, fetchUsers]);
 
-    // Initialize tasks
-    useEffect(() => {
-        if (initialTasks.length > 0) {
-            setTasks(initialTasks);
-            setTasksInitialized(true);
+    // FIXED: Improved refresh function that handles both REST and Socket
+    const handleRefresh = useCallback(async () => {
+        console.log('🔄 Manual refresh triggered');
+        setLastRefresh(new Date());
+        
+        try {
+            // Always fetch fresh data from REST API
+            await fetchTasks();
+            
+            // If socket is connected, also request fresh socket data
+            if (socket && socket.connected) {
+                console.log('🔌 Requesting fresh socket data');
+                socket.emit('request_tasks_refresh');
+            }
+        } catch (error) {
+            console.error('Error during refresh:', error);
         }
-    }, [initialTasks, setTasks]);
+    }, [fetchTasks, socket]);
 
-    // Auto-refresh on error
+    // Auto-refresh on error with exponential backoff
     useEffect(() => {
         if (error) {
+            console.log('❌ Error detected, scheduling auto-refresh');
             const timer = setTimeout(() => {
                 handleRefresh();
             }, 5000);
@@ -113,11 +143,12 @@ const KanbanBoard = () => {
         }
     }, [error, handleRefresh]);
 
-    // Periodic refresh
+    // Periodic refresh - increased frequency
     useEffect(() => {
         const interval = setInterval(() => {
+            console.log('⏰ Periodic refresh triggered');
             handleRefresh();
-        }, 300000);
+        }, 120000); // Every 2 minutes instead of 5
         return () => clearInterval(interval);
     }, [handleRefresh]);
 
@@ -191,8 +222,8 @@ const KanbanBoard = () => {
                     bValue = new Date(b.createdAt);
                     break;
                 default:
-                    aValue = a.position;
-                    bValue = b.position;
+                    aValue = a.position || 0;
+                    bValue = b.position || 0;
             }
 
             return sortOrder === 'asc' ? aValue > bValue ? 1 : -1 : aValue < bValue ? 1 : -1;
@@ -201,7 +232,7 @@ const KanbanBoard = () => {
         return filteredTasks;
     };
 
-    // Task CRUD operations
+    // FIXED: Improved task CRUD operations with better fallback handling
     const handleCreateTask = (status = 'todo') => {
         setEditingTask({ status });
         setShowModal(true);
@@ -222,28 +253,58 @@ const KanbanBoard = () => {
     const handleSaveTask = async (taskData) => {
         try {
             if (editingTask._id) {
-                await updateTask(editingTask._id, taskData);
+                // Update existing task
+                if (socket && socket.connected) {
+                    console.log('📝 Updating task via socket');
+                    updateTaskSocket(editingTask._id, taskData);
+                } else {
+                    console.log('📝 Updating task via REST API');
+                    await updateTaskRest(editingTask._id, taskData);
+                    // Force refresh to sync socket state
+                    setTimeout(() => handleRefresh(), 500);
+                }
             } else {
+                // Create new task
                 const status = editingTask.status || 'todo';
-                await createTask({ ...taskData, status });
+                if (socket && socket.connected) {
+                    console.log('➕ Creating task via socket');
+                    createTaskSocket({ ...taskData, status });
+                } else {
+                    console.log('➕ Creating task via REST API');
+                    await createTaskRest({ ...taskData, status });
+                    // Force refresh to sync socket state
+                    setTimeout(() => handleRefresh(), 500);
+                }
             }
             handleCloseModal();
         } catch (error) {
             console.error('Error saving task:', error);
+            // Show error and refresh to ensure consistency
+            setTimeout(() => handleRefresh(), 1000);
         }
     };
 
     const handleDeleteTask = async (taskId) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             try {
-                await deleteTask(taskId);
+                if (socket && socket.connected) {
+                    console.log('🗑️ Deleting task via socket');
+                    deleteTaskSocket(taskId);
+                } else {
+                    console.log('🗑️ Deleting task via REST API');
+                    await deleteTaskRest(taskId);
+                    // Force refresh to sync socket state
+                    setTimeout(() => handleRefresh(), 500);
+                }
             } catch (error) {
                 console.error('Error deleting task:', error);
+                // Refresh to ensure consistency
+                setTimeout(() => handleRefresh(), 1000);
             }
         }
     };
 
-    // Drag and drop functionality
+    // FIXED: Improved drag and drop with better error handling
     const handleDragStart = (e, task) => {
         const completeTask = activeTasks.find(t => t._id === task._id) || task;
         setDraggedTask(completeTask);
@@ -267,14 +328,30 @@ const KanbanBoard = () => {
             const userChanged = newAssignedUser && newAssignedUser !== currentUserId;
 
             if (statusChanged) {
-                const tasksInNewStatus = getTasksByStatus(newStatus);
-                const newPosition = tasksInNewStatus.length;
-                await updateTaskPosition(draggedTask._id, newStatus, newPosition);
+                if (socket && socket.connected) {
+                    console.log('🔄 Moving task via socket');
+                    moveTaskSocket(draggedTask._id, newStatus);
+                } else {
+                    console.log('🔄 Moving task via REST API');
+                    const tasksInNewStatus = getTasksByStatus(newStatus);
+                    const newPosition = tasksInNewStatus.length;
+                    await updateTaskPosition(draggedTask._id, newStatus, newPosition);
+                    setTimeout(() => handleRefresh(), 500);
+                }
             } else if (userChanged) {
-                await updateTask(draggedTask._id, { assignedUser: newAssignedUser });
+                if (socket && socket.connected) {
+                    console.log('👤 Assigning task via socket');
+                    assignTaskSocket(draggedTask._id, newAssignedUser);
+                } else {
+                    console.log('👤 Assigning task via REST API');
+                    await updateTaskRest(draggedTask._id, { assignedUser: newAssignedUser });
+                    setTimeout(() => handleRefresh(), 500);
+                }
             }
         } catch (error) {
             console.error('Error updating task:', error);
+            // Refresh to ensure consistency
+            setTimeout(() => handleRefresh(), 1000);
         }
 
         setDraggedTask(null);
@@ -305,7 +382,7 @@ const KanbanBoard = () => {
         setShowActivityPanel(!showActivityPanel);
     };
 
-    if (loading || (!tasksInitialized && initialTasks.length === 0)) {
+    if (loading) {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
