@@ -5,7 +5,7 @@ const activityLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'MOVE', 'ASSIGN']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'MOVE', 'ASSIGN','SMART_ASSIGN']
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,

@@ -10,7 +10,6 @@ const TaskCard = ({
     draggable = false 
 }) => {
     const handleDragStart = (e) => {
-        // Prevent dragging when clicking on action buttons
         if (e.target.closest('.task-actions')) {
             e.preventDefault();
             return;

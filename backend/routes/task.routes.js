@@ -14,7 +14,7 @@ const populateTask = async (task) => {
   return await task.populate([
     { 
       path: 'assignedUser', 
-      select: 'username email _id' 
+      select: 'username email _id activeTaskCount' 
     },
     { 
       path: 'createdBy', 
@@ -40,6 +40,19 @@ const emitToUser = (userId, event, data) => {
   }
 };
 
+// Helper function to update user task counts
+const updateUserTaskCount = async (userId, increment) => {
+  if (!userId) return;
+  
+  try {
+    await User.findByIdAndUpdate(userId, { 
+      $inc: { activeTaskCount: increment ? 1 : -1 } 
+    });
+  } catch (error) {
+    console.error('Error updating user task count:', error);
+  }
+};
+
 router.get('/', authenticate, async (req, res) => {
   try {
     const { status, priority, assignedUser, sortBy = 'createdAt', order = 'desc' } = req.query;
@@ -51,7 +64,7 @@ router.get('/', authenticate, async (req, res) => {
     sort[sortBy] = order === 'desc' ? -1 : 1;
 
     const tasks = await Task.find(filter)
-      .populate('assignedUser', 'username email')
+      .populate('assignedUser', 'username email activeTaskCount')
       .populate('createdBy', 'username email')
       .sort(sort);
 
@@ -73,13 +86,15 @@ router.post('/', authenticate, validateTask, async (req, res) => {
   try {
     const { title, description, assignedUser, status, priority } = req.body;
     
-    // Validate assigned user exists
-    const userExists = await User.findById(assignedUser);
-    if (!userExists) {
-      return res.status(400).json({
-        success: false,
-        message: 'Assigned user does not exist'
-      });
+    // Validate assigned user exists if provided
+    if (assignedUser) {
+      const userExists = await User.findById(assignedUser);
+      if (!userExists) {
+        return res.status(400).json({
+          success: false,
+          message: 'Assigned user does not exist'
+        });
+      }
     }
     
     // Check for duplicate title
@@ -107,13 +122,20 @@ router.post('/', authenticate, validateTask, async (req, res) => {
     });
     
     await task.save();
+    
+    // Update assigned user's task count if assigned
+    if (assignedUser) {
+      await updateUserTaskCount(assignedUser, true);
+    }
+    
     const populatedTask = await populateTask(task);
     
     // Log activity
     const activity = await logActivity(req, 'CREATE', task._id, { 
       title: task.title,
       status: task.status,
-      priority: task.priority
+      priority: task.priority,
+      assignedUser: task.assignedUser
     });
 
     // Emit socket events
@@ -124,7 +146,7 @@ router.post('/', authenticate, validateTask, async (req, res) => {
       timestamp: new Date()
     });
     
-    if (assignedUser !== req.user.id) {
+    if (assignedUser && assignedUser !== req.user.id) {
       emitToUser(assignedUser, 'task_assigned_to_you', {
         task: populatedTask,
         assignedBy: req.user.username,
@@ -188,6 +210,18 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
     const oldStatus = oldTask.status;
     const oldAssignedUser = oldTask.assignedUser?.toString();
     
+    // Handle task count updates for assignment changes
+    if (assignedUser !== undefined && assignedUser !== oldAssignedUser) {
+      // Decrement count for old assigned user if exists
+      if (oldAssignedUser) {
+        await updateUserTaskCount(oldAssignedUser, false);
+      }
+      // Increment count for new assigned user if exists
+      if (assignedUser) {
+        await updateUserTaskCount(assignedUser, true);
+      }
+    }
+    
     // Update fields
     if (title !== undefined) oldTask.title = title.trim();
     if (description !== undefined) oldTask.description = description?.trim();
@@ -227,7 +261,7 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
       });
     }
     
-    if (assignedUser && oldAssignedUser !== assignedUser) {
+    if (assignedUser !== undefined && oldAssignedUser !== assignedUser) {
       emitToAll('task_assigned', {
         task: populatedTask,
         assignedBy: req.user.username,
@@ -235,7 +269,7 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
         timestamp: new Date()
       });
       
-      if (assignedUser !== req.user.id) {
+      if (assignedUser && assignedUser !== req.user.id) {
         emitToUser(assignedUser, 'task_assigned_to_you', {
           task: populatedTask,
           assignedBy: req.user.username,
@@ -261,7 +295,7 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
 router.delete('/:id', authenticate, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('assignedUser', 'username email')
+      .populate('assignedUser', 'username email activeTaskCount')
       .populate('createdBy', 'username email');
     
     if (!task) {
@@ -271,11 +305,17 @@ router.delete('/:id', authenticate, async (req, res) => {
       });
     }
 
+    // Decrement task count for assigned user if exists
+    if (task.assignedUser) {
+      await updateUserTaskCount(task.assignedUser._id, false);
+    }
+
     // Log activity before deletion
     const activity = await logActivity(req, 'DELETE', task._id, {
       title: task.title,
       status: task.status,
-      priority: task.priority
+      priority: task.priority,
+      assignedUser: task.assignedUser
     });
 
     await Task.findByIdAndDelete(req.params.id);
@@ -358,7 +398,45 @@ router.put('/:id/position', authenticate, async (req, res) => {
     console.error('Error updating task position:', error);
     res.status(500).json({
       success: false,
-      message: 'Server hello error while updating task position'
+      message: 'Server error while updating task position'
+    });
+  }
+});
+
+router.get('/smart-assignee', authenticate, async (req, res) => {
+  try {
+    // Find active users with minimum tasks, excluding the current user if they're not an admin
+    const filter = { active: true };
+    if (!req.user.isAdmin) {
+      filter._id = { $ne: req.user.id }; // Exclude current user unless they're admin
+    }
+
+    const userWithFewestTasks = await User.find(filter)
+      .sort({ activeTaskCount: 1 })
+      .limit(1);
+    
+    if (!userWithFewestTasks || userWithFewestTasks.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No available users found for assignment' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        userId: userWithFewestTasks[0]._id,
+        username: userWithFewestTasks[0].username,
+        currentTaskCount: userWithFewestTasks[0].activeTaskCount
+      },
+      message: 'Optimal assignee found'
+    });
+  } catch (error) {
+    console.error('Error finding optimal assignee:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while finding optimal assignee',
+      error: error.message
     });
   }
 });

@@ -29,6 +29,8 @@ const userSchema = new Schema(
             minlength: [6, 'PAssword must be minimum 6 characters long'],
 
         },
+          activeTaskCount: { type: Number, default: 0 },
+
         createdAt: {
             type: Date,
             default: Date.now
