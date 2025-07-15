@@ -5,7 +5,7 @@ import TaskModal from './TaskModal';
 import FilterBar from './FilterBar';
 import NotificationContainer from './NotificationContainer';
 import OnlineUsers from './OnlineUsers';
-import ActivityLogPanel from './ActivityLogpanel';
+import ActivityLogPanel from './ActivityLogPanel';
 import { useTasks } from '../hooks/useTasks';
 import { useSocketTasks } from '../hooks/useSocketTasks';
 import { useSocketUsers } from '../hooks/useSocketUsers';
