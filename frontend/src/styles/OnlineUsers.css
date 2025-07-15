@@ -6,6 +6,18 @@
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* Mobile Overlay for proper dropdown positioning */
+.mobile-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: none;
+}
+
 /* Summary Bar */
 .online-users-summary {
   display: flex;
@@ -74,17 +86,24 @@
   margin-top: 8px;
   display: flex;
   flex-direction: column;
+  z-index: 1000;
+  border: 1px solid #e9ecef;
 }
 
 .online-users-header {
   padding: 16px;
   border-bottom: 1px solid #e9ecef;
+  background-color: #f8f9fa;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .online-users-header h4 {
   margin: 0 0 12px 0;
   color: #212529;
   font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .online-users-controls {
@@ -340,95 +359,4 @@
 @keyframes typing-bounce {
   0%, 80%, 100% { transform: translateY(0); }
   40% { transform: translateY(-5px); }
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .online-users-dropdown {
-    width: 280px;
-    max-height: 70vh;
-  }
-}
-
-@media (max-width: 480px) {
-  .online-users-dropdown {
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    max-height: 60vh;
-    border-radius: 12px 12px 0 0;
-    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.15);
-  }
-  
-  .online-users-summary {
-    padding: 6px 10px;
-  }
-  
-  .online-count {
-    font-size: 0.9rem;
-  }
-  
-  .online-text {
-    font-size: 0.9rem;
-  }
-}
-
-/* Dark Mode Support */
-@media (prefers-color-scheme: dark) {
-  .online-users-summary {
-    background-color: #343a40;
-    border-color: #495057;
-    color: #f8f9fa;
-  }
-  
-  .online-users-summary:hover {
-    background-color: #495057;
-  }
-  
-  .online-count, .online-text {
-    color: #f8f9fa;
-  }
-  
-  .online-users-dropdown {
-    background-color: #343a40;
-    border: 1px solid #495057;
-  }
-  
-  .online-users-header {
-    border-bottom-color: #495057;
-  }
-  
-  .online-users-header h4 {
-    color: #f8f9fa;
-  }
-  
-  .search-box input, .status-filter select {
-    background-color: #495057;
-    border-color: #6c757d;
-    color: #f8f9fa;
-  }
-  
-  .search-icon {
-    color: #adb5bd;
-  }
-  
-  .online-user:hover {
-    background-color: #495057;
-  }
-  
-  .user-name {
-    color: #f8f9fa;
-  }
-  
-  .typing-users {
-    background-color: #495057;
-    border-top-color: #6c757d;
-  }
-  
-  .typing-username {
-    color: #dee2e6;
-  }
 }
