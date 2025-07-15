@@ -358,7 +358,7 @@ router.put('/:id/position', authenticate, async (req, res) => {
     console.error('Error updating task position:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while updating task position'
+      message: 'Server hello error while updating task position'
     });
   }
 });
