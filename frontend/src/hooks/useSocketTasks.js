@@ -2,18 +2,19 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 
-export const useSocketTasks = (initialTasks = []) => {
-  const [tasks, setTasks] = useState(initialTasks);
+export const useSocketTasks = () => {
+  const [tasks, setTasks] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [activities, setActivities] = useState([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
-  const [isLoadingTasks, setIsLoadingTasks] = useState(true); // Add loading state for tasks
-  const { socket, isConnected, loadActivities: loadSocketActivities } = useSocket();
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const { socket, isConnected } = useSocket();
   const { user, token } = useAuth();
 
-  // ✅ ADD THIS: Fetch initial tasks from API
-  const fetchInitialTasks = useCallback(async () => {
-    if (!token) return;
+  // Initialize tasks from API
+  const initializeTasks = useCallback(async () => {
+    if (!token || isInitialized) return;
     
     setIsLoadingTasks(true);
     try {
@@ -26,28 +27,35 @@ export const useSocketTasks = (initialTasks = []) => {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success) {
-          console.log('📥 Initial tasks loaded:', data.data.length);
-          setTasks(data.data);
-        } else {
-          console.error('Failed to fetch tasks:', data.message);
+        let tasksData = [];
+        
+        if (data.success && Array.isArray(data.data)) {
+          tasksData = data.data;
+        } else if (Array.isArray(data)) {
+          tasksData = data;
+        } else if (Array.isArray(data.data)) {
+          tasksData = data.data;
         }
+
+        console.log('📥 Socket tasks initialized:', tasksData.length);
+        setTasks(tasksData);
+        setIsInitialized(true);
       } else {
-        console.error('HTTP error:', response.status);
+        console.error('Failed to initialize tasks:', response.status);
       }
     } catch (error) {
-      console.error('Error fetching initial tasks:', error);
+      console.error('Error initializing tasks:', error);
     } finally {
       setIsLoadingTasks(false);
     }
-  }, [token]);
+  }, [token, isInitialized]);
 
-  // ✅ ADD THIS: Fetch tasks on mount and when user/token changes
+  // Initialize on mount
   useEffect(() => {
-    if (user && token) {
-      fetchInitialTasks();
+    if (user && token && !isInitialized) {
+      initializeTasks();
     }
-  }, [user, token, fetchInitialTasks]);
+  }, [user, token, isInitialized, initializeTasks]);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -145,8 +153,8 @@ export const useSocketTasks = (initialTasks = []) => {
   }, [socket, isConnected]);
 
   useEffect(() => {
-    if (!socket) {
-      console.log('useSocketTasks: No socket available');
+    if (!socket || !isInitialized) {
+      console.log('useSocketTasks: Socket not available or not initialized');
       return;
     }
 
@@ -154,23 +162,30 @@ export const useSocketTasks = (initialTasks = []) => {
 
     const handleTaskCreated = (data) => {
       console.log('🔔 Socket event: task_created', data);
-      setTasks(prev => [...prev, data.task]);
+      const newTask = data.task || data;
+      setTasks(prev => {
+        // Avoid duplicates
+        const exists = prev.find(task => task._id === newTask._id);
+        if (exists) return prev;
+        return [...prev, newTask];
+      });
       addNotification({
-        message: `${data.createdBy} created a new task: ${data.task.title}`,
+        message: `${data.createdBy || 'Someone'} created a new task: ${newTask.title}`,
         type: 'success',
-        taskId: data.task._id
+        taskId: newTask._id
       });
     };
 
     const handleTaskUpdated = (data) => {
       console.log('🔔 Socket event: task_updated', data);
+      const updatedTask = data.task || data;
       setTasks(prev => prev.map(task => 
-        task._id === data.task._id ? data.task : task
+        task._id === updatedTask._id ? updatedTask : task
       ));
       addNotification({
-        message: `${data.updatedBy} updated task: ${data.task.title}`,
+        message: `${data.updatedBy || 'Someone'} updated task: ${updatedTask.title}`,
         type: 'info',
-        taskId: data.task._id
+        taskId: updatedTask._id
       });
     };
 
@@ -178,7 +193,7 @@ export const useSocketTasks = (initialTasks = []) => {
       console.log('🔔 Socket event: task_deleted', data);
       setTasks(prev => prev.filter(task => task._id !== data.taskId));
       addNotification({
-        message: `${data.deletedBy} deleted a task`,
+        message: `${data.deletedBy || 'Someone'} deleted a task`,
         type: 'warning',
         taskId: data.taskId
       });
@@ -186,39 +201,42 @@ export const useSocketTasks = (initialTasks = []) => {
 
     const handleTaskMoved = (data) => {
       console.log('🔔 Socket event: task_moved', data);
+      const movedTask = data.task || data;
       setTasks(prev => prev.map(task => 
-        task._id === data.task._id ? data.task : task
+        task._id === movedTask._id ? movedTask : task
       ));
       addNotification({
-        message: `${data.movedBy} moved task to ${data.task.status}`,
+        message: `${data.movedBy || 'Someone'} moved task to ${movedTask.status}`,
         type: 'info',
-        taskId: data.task._id
+        taskId: movedTask._id
       });
     };
 
     const handleTaskAssigned = (data) => {
       console.log('🔔 Socket event: task_assigned', data);
+      const assignedTask = data.task || data;
       setTasks(prev => prev.map(task => 
-        task._id === data.task._id ? data.task : task
+        task._id === assignedTask._id ? assignedTask : task
       ));
       addNotification({
-        message: `${data.assignedBy} assigned task to ${data.task.assignedTo}`,
+        message: `${data.assignedBy || 'Someone'} assigned task to ${assignedTask.assignedTo || 'someone'}`,
         type: 'info',
-        taskId: data.task._id
+        taskId: assignedTask._id
       });
     };
 
     const handleTaskAssignedToYou = (data) => {
       console.log('🔔 Socket event: task_assigned_to_you', data);
+      const assignedTask = data.task || data;
       setTasks(prev => prev.map(task => 
-        task._id === data.task._id ? data.task : task
+        task._id === assignedTask._id ? assignedTask : task
       ));
       showBrowserNotification('Task Assigned to You', {
-        body: `You've been assigned to: ${data.task.title}`,
+        body: `You've been assigned to: ${assignedTask.title}`,
         onClick: () => {
-          console.log('Notification clicked for task:', data.task._id);
+          console.log('Notification clicked for task:', assignedTask._id);
         },
-        data: { taskId: data.task._id }
+        data: { taskId: assignedTask._id }
       });
     };
 
@@ -239,26 +257,28 @@ export const useSocketTasks = (initialTasks = []) => {
       }
     };
 
-    socket.on('task_created', handleTaskCreated);
-    socket.on('task_updated', handleTaskUpdated);
-    socket.on('task_deleted', handleTaskDeleted);
-    socket.on('task_moved', handleTaskMoved);
-    socket.on('task_assigned', handleTaskAssigned);
-    socket.on('task_assigned_to_you', handleTaskAssignedToYou);
-    socket.on('activities_loaded', handleActivitiesLoaded);
-    socket.on('activity_created', handleActivityCreated);
+    // Register all socket listeners
+    const eventHandlers = {
+      'task_created': handleTaskCreated,
+      'task_updated': handleTaskUpdated,
+      'task_deleted': handleTaskDeleted,
+      'task_moved': handleTaskMoved,
+      'task_assigned': handleTaskAssigned,
+      'task_assigned_to_you': handleTaskAssignedToYou,
+      'activities_loaded': handleActivitiesLoaded,
+      'activity_created': handleActivityCreated
+    };
+
+    Object.entries(eventHandlers).forEach(([event, handler]) => {
+      socket.on(event, handler);
+    });
 
     return () => {
-      socket.off('task_created', handleTaskCreated);
-      socket.off('task_updated', handleTaskUpdated);
-      socket.off('task_deleted', handleTaskDeleted);
-      socket.off('task_moved', handleTaskMoved);
-      socket.off('task_assigned', handleTaskAssigned);
-      socket.off('task_assigned_to_you', handleTaskAssignedToYou);
-      socket.off('activities_loaded', handleActivitiesLoaded);
-      socket.off('activity_created', handleActivityCreated);
+      Object.entries(eventHandlers).forEach(([event, handler]) => {
+        socket.off(event, handler);
+      });
     };
-  }, [socket, showBrowserNotification, user]);
+  }, [socket, isInitialized, showBrowserNotification, user]);
 
   const addNotification = useCallback(({ message, type, taskId }) => {
     const id = Date.now();
@@ -273,12 +293,14 @@ export const useSocketTasks = (initialTasks = []) => {
     
     setNotifications(prev => [...prev, notification]);
     
+    // Auto-remove non-error notifications after 5 seconds
     if (type !== 'error') {
       setTimeout(() => {
         removeNotification(id);
       }, 5000);
     }
 
+    // Show browser notification for important events
     if (type === 'success' || type === 'error') {
       showBrowserNotification('Task Update', {
         body: message,
@@ -326,18 +348,35 @@ export const useSocketTasks = (initialTasks = []) => {
     socket.emit('assign_task', { taskId, assigneeId });
   }, [socket]);
 
-  // ✅ ADD THIS: Refresh tasks function
   const refreshTasks = useCallback(() => {
-    fetchInitialTasks();
-  }, [fetchInitialTasks]);
+    setIsInitialized(false);
+    initializeTasks();
+  }, [initializeTasks]);
+
+  const testNotification = useCallback(() => {
+    addNotification({
+      message: 'This is a test notification!',
+      type: 'info',
+      taskId: 'test'
+    });
+  }, [addNotification]);
+
+  // Method to sync tasks with external source
+  const syncTasks = useCallback((externalTasks) => {
+    if (Array.isArray(externalTasks)) {
+      setTasks(externalTasks);
+    }
+  }, []);
 
   return {
     tasks,
     notifications,
     activities,
     isLoadingActivities,
-    isLoadingTasks, // ✅ ADD THIS: Export loading state
+    isLoadingTasks,
+    isInitialized,
     setTasks,
+    syncTasks,
     createTask,
     updateTask,
     deleteTask,
@@ -348,6 +387,7 @@ export const useSocketTasks = (initialTasks = []) => {
     clearNotifications,
     loadActivities,
     showBrowserNotification,
-    refreshTasks // ✅ ADD THIS: Export refresh function
+    refreshTasks,
+    testNotification
   };
 };

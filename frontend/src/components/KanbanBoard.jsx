@@ -16,15 +16,15 @@ const KanbanBoard = () => {
     const navigate = useNavigate();
     const { socket } = useSocket();
     const {
-        tasks: initialTasks,
+        tasks: apiTasks,
         loading,
         error,
         fetchTasks,
         fetchUsers,
-        createTask,
-        updateTask,
-        deleteTask,
-        updateTaskPosition,
+        createTask: createTaskAPI,
+        updateTask: updateTaskAPI,
+        deleteTask: deleteTaskAPI,
+        updateTaskPosition: updateTaskPositionAPI,
         users
     } = useTasks();
 
@@ -32,12 +32,18 @@ const KanbanBoard = () => {
     const { 
         tasks: socketTasks, 
         setTasks, 
+        syncTasks,
         notifications, 
         removeNotification, 
         clearNotifications,
         testNotification,
-        refreshTasks
-    } = useSocketTasks(initialTasks);
+        refreshTasks,
+        createTask: createTaskSocket,
+        updateTask: updateTaskSocket,
+        deleteTask: deleteTaskSocket,
+        moveTask: moveTaskSocket,
+        assignTask: assignTaskSocket
+    } = useSocketTasks();
 
     const { onlineUsers, typingUsers } = useSocketUsers();
 
@@ -46,7 +52,6 @@ const KanbanBoard = () => {
     const [draggedTask, setDraggedTask] = useState(null);
     const [draggedOverUser, setDraggedOverUser] = useState(null);
     const [isTyping, setIsTyping] = useState(false);
-    const [tasksInitialized, setTasksInitialized] = useState(false);
     const [showActivityPanel, setShowActivityPanel] = useState(false);
     const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -58,6 +63,23 @@ const KanbanBoard = () => {
 
     const [sortBy, setSortBy] = useState('createdAt');
     const [sortOrder, setSortOrder] = useState('desc');
+
+    // Combine API and Socket tasks with proper synchronization
+    const activeTasks = useMemo(() => {
+        // If socket tasks exist and are populated, use them
+        if (socketTasks && socketTasks.length > 0) {
+            return socketTasks;
+        }
+        // Otherwise, use API tasks
+        return apiTasks || [];
+    }, [socketTasks, apiTasks]);
+
+    // Sync tasks when API tasks change
+    useEffect(() => {
+        if (apiTasks && apiTasks.length > 0) {
+            syncTasks(apiTasks);
+        }
+    }, [apiTasks, syncTasks]);
 
     // Notification setup
     useEffect(() => {
@@ -80,11 +102,7 @@ const KanbanBoard = () => {
         setLastRefresh(new Date());
     }, [fetchTasks, refreshTasks]);
 
-    // Task management
-    const activeTasks = useMemo(() => {
-        return socketTasks.length > 0 && tasksInitialized ? socketTasks : initialTasks;
-    }, [socketTasks, initialTasks, tasksInitialized]);
-
+    // Initial data load
     useEffect(() => {
         fetchTasks();
     }, [fetchTasks]);
@@ -94,14 +112,6 @@ const KanbanBoard = () => {
             fetchUsers();
         }
     }, [showModal, users.length, fetchUsers]);
-
-    // Initialize tasks
-    useEffect(() => {
-        if (initialTasks.length > 0) {
-            setTasks(initialTasks);
-            setTasksInitialized(true);
-        }
-    }, [initialTasks, setTasks]);
 
     // Auto-refresh on error
     useEffect(() => {
@@ -191,8 +201,8 @@ const KanbanBoard = () => {
                     bValue = new Date(b.createdAt);
                     break;
                 default:
-                    aValue = a.position;
-                    bValue = b.position;
+                    aValue = a.position || 0;
+                    bValue = b.position || 0;
             }
 
             return sortOrder === 'asc' ? aValue > bValue ? 1 : -1 : aValue < bValue ? 1 : -1;
@@ -201,7 +211,7 @@ const KanbanBoard = () => {
         return filteredTasks;
     };
 
-    // Task CRUD operations
+    // Task CRUD operations with immediate state updates
     const handleCreateTask = (status = 'todo') => {
         setEditingTask({ status });
         setShowModal(true);
@@ -222,28 +232,60 @@ const KanbanBoard = () => {
     const handleSaveTask = async (taskData) => {
         try {
             if (editingTask._id) {
-                await updateTask(editingTask._id, taskData);
+                // Update existing task
+                const updatedTask = await updateTaskAPI(editingTask._id, taskData);
+                
+                // Update local state immediately
+                setTasks(prevTasks => 
+                    prevTasks.map(task => 
+                        task._id === editingTask._id ? updatedTask : task
+                    )
+                );
+                
+                // Also emit socket event if connected
+                if (socket) {
+                    updateTaskSocket(editingTask._id, taskData);
+                }
             } else {
+                // Create new task
                 const status = editingTask.status || 'todo';
-                await createTask({ ...taskData, status });
+                const newTask = await createTaskAPI({ ...taskData, status });
+                
+                // Update local state immediately
+                setTasks(prevTasks => [...prevTasks, newTask]);
+                
+                // Also emit socket event if connected
+                if (socket) {
+                    createTaskSocket({ ...taskData, status });
+                }
             }
             handleCloseModal();
         } catch (error) {
             console.error('Error saving task:', error);
+            // Optionally show error notification
         }
     };
 
     const handleDeleteTask = async (taskId) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             try {
-                await deleteTask(taskId);
+                await deleteTaskAPI(taskId);
+                
+                // Update local state immediately
+                setTasks(prevTasks => prevTasks.filter(task => task._id !== taskId));
+                
+                // Also emit socket event if connected
+                if (socket) {
+                    deleteTaskSocket(taskId);
+                }
             } catch (error) {
                 console.error('Error deleting task:', error);
+                // Optionally show error notification
             }
         }
     };
 
-    // Drag and drop functionality
+    // Drag and drop functionality with immediate updates
     const handleDragStart = (e, task) => {
         const completeTask = activeTasks.find(t => t._id === task._id) || task;
         setDraggedTask(completeTask);
@@ -269,12 +311,40 @@ const KanbanBoard = () => {
             if (statusChanged) {
                 const tasksInNewStatus = getTasksByStatus(newStatus);
                 const newPosition = tasksInNewStatus.length;
-                await updateTaskPosition(draggedTask._id, newStatus, newPosition);
+                
+                // Update via API
+                const updatedTask = await updateTaskPositionAPI(draggedTask._id, newStatus, newPosition);
+                
+                // Update local state immediately
+                setTasks(prevTasks =>
+                    prevTasks.map(task =>
+                        task._id === draggedTask._id ? updatedTask : task
+                    )
+                );
+                
+                // Also emit socket event if connected
+                if (socket) {
+                    moveTaskSocket(draggedTask._id, newStatus);
+                }
             } else if (userChanged) {
-                await updateTask(draggedTask._id, { assignedUser: newAssignedUser });
+                // Update via API
+                const updatedTask = await updateTaskAPI(draggedTask._id, { assignedUser: newAssignedUser });
+                
+                // Update local state immediately
+                setTasks(prevTasks =>
+                    prevTasks.map(task =>
+                        task._id === draggedTask._id ? updatedTask : task
+                    )
+                );
+                
+                // Also emit socket event if connected
+                if (socket) {
+                    assignTaskSocket(draggedTask._id, newAssignedUser);
+                }
             }
         } catch (error) {
             console.error('Error updating task:', error);
+            // Optionally revert local state changes on error
         }
 
         setDraggedTask(null);
@@ -305,7 +375,7 @@ const KanbanBoard = () => {
         setShowActivityPanel(!showActivityPanel);
     };
 
-    if (loading || (!tasksInitialized && initialTasks.length === 0)) {
+    if (loading && activeTasks.length === 0) {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
@@ -317,7 +387,7 @@ const KanbanBoard = () => {
         );
     }
 
-    if (error) {
+    if (error && activeTasks.length === 0) {
         return (
             <div className="error-container">
                 <div className="error-icon">⚠️</div>
