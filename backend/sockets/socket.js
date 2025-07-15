@@ -18,7 +18,7 @@ async function getLastActivities() {
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: ['https://todo-board-1.vercel.app', 'https://todoboard-1-nvnk.onrender.com'],
+      origin: ['https://todo-board-1.vercel.app','https://todoboard-1-nvnk.onrender.com'],
       credentials: true,
       methods: ['GET', 'POST']
     },
@@ -45,7 +45,7 @@ export const initializeSocket = (server) => {
 
   io.on('connection', (socket) => {
     const { userId, username } = socket;
-
+    
     // Add user to online list
     onlineUsers.set(userId, {
       userId,
@@ -56,10 +56,10 @@ export const initializeSocket = (server) => {
 
     // Join user to their room
     socket.join(`user_${userId}`);
-
+    
     // Notify others
     socket.broadcast.emit('user_connected', { userId, username });
-
+    
     // Send online users to new connection
     updateOnlineUsers();
 
@@ -74,30 +74,7 @@ export const initializeSocket = (server) => {
     socket.on('get_online_users', () => {
       updateOnlineUsers();
     });
-    socket.on('request_tasks_refresh', async () => {
-      try {
-        console.log('📥 Client requested tasks refresh');
-
-        // Fetch fresh tasks from database
-        const tasks = await Task.find()
-          .populate('assignedUser', 'username email')
-          .sort({ createdAt: -1 });
-
-        // Send fresh tasks back to the requesting client
-        socket.emit('tasks_refreshed', {
-          tasks,
-          timestamp: new Date()
-        });
-
-        console.log('📤 Sent refreshed tasks to client:', tasks.length);
-      } catch (error) {
-        console.error('Error refreshing tasks:', error);
-        socket.emit('error', {
-          message: 'Failed to refresh tasks',
-          error: error.message
-        });
-      }
-    });
+    
 
     // Notification handler
     socket.on('send_notification', ({ receiverId, message }) => {
