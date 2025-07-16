@@ -191,42 +191,59 @@ export const useTasks = () => {
         }
     }, []);
 
-    const updateTask = useCallback(async (taskId, taskData) => {
-        try {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                throw new Error('No authentication token found');
-            }
+const updateTask = useCallback(async (taskId, taskData) => {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
 
-            const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(taskData)
-            });
+    // Get current task version from local state
+    const currentTask = tasks.find(t => t._id === taskId);
+    const clientVersion = currentTask?.version;
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to update task: ${response.status} ${response.statusText} - ${errorText}`);
-            }
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        ...taskData,
+        clientVersion // Send current version to server
+      })
+    });
 
-            const result = await response.json();
-            const updatedTask = result.data || result;
-            
-            setTasks(prev =>
-                Array.isArray(prev)
-                    ? prev.map(task => task._id === taskId ? updatedTask : task)
-                    : [updatedTask]
-            );
-            return updatedTask;
-        } catch (err) {
-            console.error('Error updating task:', err);
-            setError(err.message);
-            throw err;
-        }
-    }, []);
+    const result = await response.json();
+
+    // Handle conflict response
+    if (response.status === 409 && result.conflict) {
+      return {
+        conflict: true,
+        serverData: result.serverData,
+        clientData: result.clientData
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update task: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const updatedTask = result.data || result;
+    
+    setTasks(prev =>
+      prev.map(task => task._id === taskId ? updatedTask : task)
+    );
+    
+    return { success: true, data: updatedTask };
+  } catch (err) {
+    console.error('Error updating task:', err);
+    setError(err.message);
+    throw err;
+  }
+}, [tasks]);
+
 
     const deleteTask = useCallback(async (taskId) => {
         try {

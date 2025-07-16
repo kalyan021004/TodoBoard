@@ -79,7 +79,7 @@
   right: 0;
   width: 320px;
   max-height: 500px;
-  background-color: white;
+  background-color: rgb(36, 16, 16);
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
   overflow: hidden;
@@ -88,11 +88,12 @@
   flex-direction: column;
   z-index: 1000;
   border: 1px solid #e9ecef;
+  
 }
 
 .online-users-header {
   padding: 16px;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid #164069;
   background-color: #f8f9fa;
   position: sticky;
   top: 0;
@@ -101,7 +102,7 @@
 
 .online-users-header h4 {
   margin: 0 0 12px 0;
-  color: #212529;
+  color: #1b446d;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -119,7 +120,7 @@
 .search-box input {
   width: 100%;
   padding: 8px 12px 8px 32px;
-  border: 1px solid #dee2e6;
+  border: 1px solid #123252;
   border-radius: 20px;
   font-size: 0.9rem;
   transition: border-color 0.2s;
@@ -142,10 +143,10 @@
 .status-filter select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #dee2e6;
+  border: 1px solid #20558a;
   border-radius: 20px;
   font-size: 0.9rem;
-  background-color: white;
+  background-color: rgb(63, 24, 113);
   cursor: pointer;
 }
 

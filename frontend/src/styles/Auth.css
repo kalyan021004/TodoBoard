@@ -25,7 +25,7 @@ body {
 }
 
 .auth-card {
-  background: white;
+  background: rgb(174, 19, 19);
   border-radius: 16px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   padding: 40px;
@@ -49,14 +49,14 @@ body {
 .auth-title {
   font-size: 28px;
   font-weight: 700;
-  color: #2d3748;
+  color: #ced2d8;
   margin-bottom: 8px;
   text-align: center;
 }
 
 .auth-subtitle {
   font-size: 16px;
-  color: #718096;
+  color: #d4dae2;
   text-align: center;
   margin-bottom: 32px;
 }
@@ -76,13 +76,13 @@ body {
 .form-group label {
   font-size: 14px;
   font-weight: 600;
-  color: #4a5568;
+  color: #e0e3e8;
   margin-bottom: 4px;
 }
 
 .form-group input {
   padding: 12px 16px;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #d1dbe7;
   border-radius: 8px;
   font-size: 16px;
   transition: all 0.2s ease;
@@ -92,22 +92,22 @@ body {
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #e7eaf7;
   background-color: white;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .form-group input::placeholder {
-  color: #a0aec0;
+  color: #eceef2;
 }
 
 .form-group input.error {
   border-color: #e53e3e;
-  background-color: #fed7d7;
+  background-color: #ccb8b8;
 }
 
 .form-group input.error:focus {
-  border-color: #e53e3e;
+  border-color: #e5dddd;
   box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.1);
 }
 
