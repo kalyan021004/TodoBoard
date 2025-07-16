@@ -64,18 +64,58 @@ const TaskCard = ({
     }
   };
 
-  const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
-
-  const getTimeAgo = (dateString) => {
-    const now = new Date();
-    const created = new Date(dateString);
-    const diffTime = Math.abs(now - created);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays <= 7) return `${diffDays} days ago`;
-    return formatDate(dateString);
+const formatDate = (dateString) => {
+  const options = { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
   };
+  return new Date(dateString).toLocaleDateString(undefined, options);
+};
+ const getTimeAgo = (dateString) => {
+  const now = new Date();
+  const created = new Date(dateString);
+  const diffInSeconds = Math.floor((now - created) / 1000);
+  
+  // Calculate different time intervals
+  const intervals = {
+    year: 31536000,
+    month: 2592000,
+    week: 604800,
+    day: 86400,
+    hour: 3600,
+    minute: 60
+  };
+
+  if (diffInSeconds < 60) {
+    return 'Just now';
+  }
+  if (diffInSeconds < intervals.hour) {
+    const minutes = Math.floor(diffInSeconds / intervals.minute);
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  }
+  if (diffInSeconds < intervals.day) {
+    const hours = Math.floor(diffInSeconds / intervals.hour);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+  if (diffInSeconds < intervals.week) {
+    const days = Math.floor(diffInSeconds / intervals.day);
+    return days === 1 ? 'Yesterday' : `${days} days ago`;
+  }
+  if (diffInSeconds < intervals.month) {
+    const weeks = Math.floor(diffInSeconds / intervals.week);
+    return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+  }
+  if (diffInSeconds < intervals.year) {
+    const months = Math.floor(diffInSeconds / intervals.month);
+    return `${months} month${months === 1 ? '' : 's'} ago`;
+  }
+  
+  const years = Math.floor(diffInSeconds / intervals.year);
+  return `${years} year${years === 1 ? '' : 's'} ago`;
+};
 
   return (
     <div 
