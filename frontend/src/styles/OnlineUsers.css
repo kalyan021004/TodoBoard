@@ -1,11 +1,14 @@
 /* OnlineUsers.css */
 
 .online-users {
-  position: relative;
-  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 6px 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
-
 /* Mobile Overlay for proper dropdown positioning */
 .mobile-overlay {
   position: fixed;

@@ -17,6 +17,8 @@
 /* Header Styles */
 .kanban-header {
   display: flex;
+    flex-direction: column;
+
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
@@ -36,10 +38,14 @@
 
 .header-actions {
   display: flex;
+    flex-wrap: wrap;
+
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
   position: relative;
+    justify-content: space-between;
+
 }
 
 /* Online Users - Fixed Extreme Left Positioning */
