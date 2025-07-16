@@ -50,8 +50,8 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
     'https://todo-board-1.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:5173'
+    'https://todoboard-1-nvnk.onrender.com'
+    
   ];
   
   if (allowedOrigins.includes(origin)) {

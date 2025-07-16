@@ -41,7 +41,9 @@ const taskSchema = Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Board',
         default: null
-    }
+    },
+      version: { type: Number, default: 1 } // 👈 New field added
+
 }, { timestamps: true });
 
 // Indexes for performance

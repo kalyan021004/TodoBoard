@@ -193,77 +193,87 @@ router.post('/', authenticate, validateTask, async (req, res) => {
 
 router.put('/:id', authenticate, validateTask, async (req, res) => {
   try {
-    const { title, description, assignedUser, status, priority } = req.body;
-    
+    const { title, description, assignedUser, status, priority, clientVersion } = req.body;
+
     const oldTask = await Task.findById(req.params.id);
     if (!oldTask) {
-      return res.status(404).json({
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+
+    // Enhanced conflict detection
+    if (clientVersion === undefined || Number(clientVersion) !== oldTask.version) {
+      return res.status(409).json({
         success: false,
-        message: 'Task not found'
+        message: 'Conflict: Task has been modified by someone else.',
+        conflict: true,
+        serverData: {
+          _id: oldTask._id,
+          title: oldTask.title,
+          description: oldTask.description,
+          assignedUser: oldTask.assignedUser,
+          status: oldTask.status,
+          priority: oldTask.priority,
+          version: oldTask.version
+        },
+        clientData: { 
+          title, 
+          description, 
+          assignedUser, 
+          status, 
+          priority,
+          clientVersion
+        }
       });
     }
-    
-    // Verify assigned user exists if changed
-    if (assignedUser) {
+
+    const oldStatus = oldTask.status;
+    const oldAssignedUser = oldTask.assignedUser?.toString();
+
+    if (assignedUser && assignedUser !== oldAssignedUser) {
       const userExists = await User.findById(assignedUser);
       if (!userExists) {
-        return res.status(400).json({
-          success: false,
-          message: 'Assigned user does not exist'
-        });
+        return res.status(400).json({ success: false, message: 'Assigned user does not exist' });
       }
     }
-    
-    // Check for duplicate title if changed
+
     if (title?.trim() && title.trim() !== oldTask.title) {
-      const existingTask = await Task.findOne({ 
+      const existingTask = await Task.findOne({
         title: { $regex: new RegExp(`^${title.trim()}$`, 'i') },
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingTask) {
-        return res.status(400).json({
-          success: false,
-          message: 'Task with this title already exists'
-        });
+        return res.status(400).json({ success: false, message: 'Task with this title already exists' });
       }
     }
-    
-    // Store old values for comparison
-    const oldStatus = oldTask.status;
-    const oldAssignedUser = oldTask.assignedUser?.toString();
-    
-    // Handle task count updates for assignment changes
-    if (assignedUser !== undefined && assignedUser !== oldAssignedUser) {
-      // Decrement count for old assigned user if exists
-      if (oldAssignedUser) {
-        await updateUserTaskCount(oldAssignedUser, false);
-      }
-      // Increment count for new assigned user if exists
-      if (assignedUser) {
-        await updateUserTaskCount(assignedUser, true);
-      }
+
+    // Handle task assignment changes
+    if (assignedUser && assignedUser !== oldAssignedUser) {
+      if (oldAssignedUser) await updateUserTaskCount(oldAssignedUser, false);
+      await updateUserTaskCount(assignedUser, true);
     }
-    
-    // Update fields
-    if (title !== undefined) oldTask.title = title.trim();
-    if (description !== undefined) oldTask.description = description?.trim();
-    if (assignedUser !== undefined) oldTask.assignedUser = assignedUser;
-    if (status !== undefined) oldTask.status = status;
-    if (priority !== undefined) oldTask.priority = priority;
-    
+
+    // Update task fields
+    oldTask.title = title !== undefined ? title.trim() : oldTask.title;
+    oldTask.description = description !== undefined ? description.trim() : oldTask.description;
+    oldTask.assignedUser = assignedUser !== undefined ? assignedUser : oldTask.assignedUser;
+    oldTask.status = status !== undefined ? status : oldTask.status;
+    oldTask.priority = priority !== undefined ? priority : oldTask.priority;
+    oldTask.version = oldTask.version + 1; // Always increment version
+    oldTask.updatedAt = new Date();
+
     await oldTask.save();
     const populatedTask = await populateTask(oldTask);
-    
+
     // Log activity
-    const activity = await logActivity(req, 'UPDATE', oldTask._id, {
+    const activity = await logActivity(req, 'UPDATE', task._id, {
       changes: {
-        title: title !== undefined ? title : oldTask.title,
-        status: status !== undefined ? status : oldTask.status,
-        priority: priority !== undefined ? priority : oldTask.priority,
-        assignedUser: assignedUser !== undefined ? assignedUser : oldTask.assignedUser
-      },
-      previousStatus: oldStatus
+        title: oldTask.title !== title ? { old: oldTask.title, new: title } : undefined,
+        description: oldTask.description !== description ? { old: oldTask.description, new: description } : undefined,
+        assignedUser: oldAssignedUser !== assignedUser ? { old: oldAssignedUser, new: assignedUser } : undefined,
+        status: oldStatus !== status ? { old: oldStatus, new: status } : undefined,
+        priority: oldTask.priority !== priority ? { old: oldTask.priority, new: priority } : undefined
+      }
     });
 
     // Emit socket events
@@ -273,45 +283,25 @@ router.put('/:id', authenticate, validateTask, async (req, res) => {
       updatedBy: req.user.username,
       timestamp: new Date()
     });
-    
-    if (oldStatus !== status) {
-      emitToAll('task_moved', {
-        task: populatedTask,
-        movedBy: req.user.username,
-        oldStatus,
-        newStatus: status,
-        timestamp: new Date()
-      });
-    }
-    
-    if (assignedUser !== undefined && oldAssignedUser !== assignedUser) {
-      emitToAll('task_assigned', {
+
+    if (oldAssignedUser !== assignedUser && assignedUser) {
+      emitToUser(assignedUser, 'task_assigned_to_you', {
         task: populatedTask,
         assignedBy: req.user.username,
-        assignedTo: assignedUser,
         timestamp: new Date()
       });
-      
-      if (assignedUser && assignedUser !== req.user.id) {
-        emitToUser(assignedUser, 'task_assigned_to_you', {
-          task: populatedTask,
-          assignedBy: req.user.username,
-          timestamp: new Date()
-        });
-      }
     }
-    
-    res.json({
-      success: true,
-      data: populatedTask,
-      message: 'Task updated successfully'
+
+    res.json({ 
+      success: true, 
+      data: populatedTask, 
+      message: 'Task updated successfully',
+      version: oldTask.version // Send back new version
     });
+
   } catch (error) {
     console.error('Error updating task:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating task'
-    });
+    res.status(500).json({ success: false, message: 'Server error while updating task' });
   }
 });
 
