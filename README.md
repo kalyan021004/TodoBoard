@@ -59,7 +59,8 @@ This collaborative to-do board allows multiple users to work together on tasks i
 1. **Clone the repository**
    ```bash
    git clone https://github.com/kalyan021004/TodoBoard.git
-   cd collaborative-todo-board
+   cd todoboard
+   
    ```
 
 2. **Install backend dependencies**
