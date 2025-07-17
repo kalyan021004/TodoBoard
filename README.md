@@ -362,12 +362,7 @@ collaborative-todo-board/
 - React community for excellent documentation
 - Vite for blazing-fast development experience
 
-## 📞 Support
 
-If you encounter any issues or have questions:
-- Open an issue on GitHub
-- Contact: [your-email@example.com](mailto:kalyan021004@gmail.com)
 
----
 
 **Built with ❤️ by [Venkata Kalyan Chittiboina]**
