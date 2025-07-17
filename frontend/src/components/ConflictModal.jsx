@@ -10,7 +10,7 @@ const ConflictModal = ({
 }) => {
   const [mergedTask, setMergedTask] = useState({
     ...localTask,
-    version: serverTask.version // Always use server version as base
+    version: serverTask.version 
   });
 
   if (!isOpen) return null;
@@ -19,7 +19,7 @@ const ConflictModal = ({
     setMergedTask(prev => ({ 
       ...prev, 
       [field]: value,
-      version: serverTask.version // Keep server version
+      version: serverTask.version 
     }));
   };
 
