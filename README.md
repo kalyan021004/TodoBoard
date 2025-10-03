@@ -1,4 +1,4 @@
-# Full Stack Collaborative To-Do Board
+# Full Stack Collaborative Task-Mangement Website
 
 A real-time collaborative task management application built with modern web technologies. This project features a Kanban-style board with drag-and-drop functionality, real-time synchronization, smart task assignment, and conflict resolution.
 
